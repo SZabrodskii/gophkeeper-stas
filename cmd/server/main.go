@@ -16,8 +16,9 @@ func main() {
 		logging.Module,
 		fx.Invoke(db.NewDB),
 		fx.Provide(server.NewRouter),
-		fx.Invoke(server.StartServer),
-		fx.Invoke(handler.RegisterHealthRoutes),
-		fx.Invoke(handler.RegisterSignalHandler),
+		fx.Invoke(
+			server.StartServer,
+			handler.RegisterHealthRoutes,
+			handler.RegisterSignalHandler),
 	).Run()
 }
