@@ -3,6 +3,8 @@ package config
 import (
 	"github.com/caarlos0/env/v11"
 	"go.uber.org/fx"
+
+	"github.com/SZabrodskii/gophkeeper-stas/pkg/logging"
 )
 
 type ServerConfig struct {
@@ -24,6 +26,11 @@ func NewServerConfig() (*ServerConfig, error) {
 	return &cfg, nil
 }
 
+func (c *ServerConfig) LoggingConfig() logging.Config {
+	return logging.Config{Level: c.LogLevel}
+}
+
 var Module = fx.Module("config",
 	fx.Provide(NewServerConfig),
+	fx.Provide(func(cfg *ServerConfig) logging.Config { return cfg.LoggingConfig() }),
 )
