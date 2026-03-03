@@ -1,0 +1,9 @@
+bin/
+docs/swagger.json
+docs/swagger.yaml
+docs/docs.go
+.env
+certs/
+*.out
+specs
+
