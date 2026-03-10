@@ -15,12 +15,18 @@ var AuthModule = fx.Module("handler.auth",
 	fx.Invoke(RegisterAuthRoutes),
 )
 
+type AuthHandlerParams struct {
+	fx.In
+
+	AuthService *service.AuthService
+}
+
 type AuthHandler struct {
 	authService *service.AuthService
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(params AuthHandlerParams) *AuthHandler {
+	return &AuthHandler{authService: params.AuthService}
 }
 
 type authRequest struct {

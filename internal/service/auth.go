@@ -27,8 +27,8 @@ const (
 type AuthServiceParams struct {
 	fx.In
 
-	UserRepo repository.UserRepository
-	Config   *config.ServerConfig
+	UserRepo   repository.UserRepository
+	AuthConfig config.AuthConfig
 }
 
 type AuthService struct {
@@ -39,7 +39,7 @@ type AuthService struct {
 func NewAuthService(params AuthServiceParams) *AuthService {
 	return &AuthService{
 		userRepo:  params.UserRepo,
-		jwtSecret: []byte(params.Config.JWTSecret),
+		jwtSecret: []byte(params.AuthConfig.JWTSecret),
 	}
 }
 

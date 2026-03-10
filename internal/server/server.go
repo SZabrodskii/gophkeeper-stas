@@ -23,7 +23,7 @@ func NewRouter(logger *zap.Logger) *gin.Engine {
 	return r
 }
 
-func StartServer(lc fx.Lifecycle, cfg *config.ServerConfig, router *gin.Engine, logger *zap.Logger) {
+func StartServer(lc fx.Lifecycle, cfg config.ListenConfig, router *gin.Engine, logger *zap.Logger) {
 	srv := &http.Server{
 		Addr:    cfg.Address,
 		Handler: router,
