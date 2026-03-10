@@ -55,7 +55,7 @@ func setupRouter() (*gin.Engine, *mockUserRepo) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockUserRepo()
 	authSvc := service.NewAuthServiceFromRaw(repo, "test-secret-key-for-handler-tests")
-	h := NewAuthHandler(authSvc)
+	h := &AuthHandler{authService: authSvc}
 
 	r := gin.New()
 	RegisterAuthRoutes(r, h)
