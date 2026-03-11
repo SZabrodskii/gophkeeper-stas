@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/gopybara/httpbara"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -57,8 +58,15 @@ func setupRouter() (*gin.Engine, *mockUserRepo) {
 	authSvc := service.NewAuthServiceFromRaw(repo, "test-secret-key-for-handler-tests")
 	h := &AuthHandler{authService: authSvc}
 
+	handler, err := httpbara.AsHandler(h)
+	if err != nil {
+		panic(err)
+	}
+
 	r := gin.New()
-	RegisterAuthRoutes(r, h)
+	if _, err := httpbara.New([]*httpbara.Handler{handler}, httpbara.WithGinEngine(r)); err != nil {
+		panic(err)
+	}
 	return r, repo
 }
 

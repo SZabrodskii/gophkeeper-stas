@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gopybara/httpbara"
 	"go.uber.org/fx"
 
 	"github.com/SZabrodskii/gophkeeper-stas/internal/service"
@@ -12,21 +13,22 @@ import (
 
 var AuthModule = fx.Module("handler.auth",
 	fx.Provide(NewAuthHandler),
-	fx.Invoke(RegisterAuthRoutes),
 )
 
-type AuthHandlerParams struct {
-	fx.In
-
-	AuthService *service.AuthService
+type authHandlerRoutes struct {
+	V1Auth   httpbara.Group `group:"/api/v1/auth"`
+	Register httpbara.Route `route:"POST /register" group:"v1auth"`
 }
 
 type AuthHandler struct {
+	authHandlerRoutes
 	authService *service.AuthService
 }
 
-func NewAuthHandler(params AuthHandlerParams) *AuthHandler {
-	return &AuthHandler{authService: params.AuthService}
+type authHandlerParams struct {
+	fx.In
+
+	AuthService *service.AuthService
 }
 
 type authRequest struct {
@@ -36,6 +38,11 @@ type authRequest struct {
 
 type tokenResponse struct {
 	Token string `json:"token"`
+}
+
+func NewAuthHandler(params authHandlerParams) (fxHandler, error) {
+	h := &AuthHandler{authService: params.AuthService}
+	return asFxHandler(httpbara.AsHandler(h))
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -59,11 +66,4 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, tokenResponse{Token: token})
-}
-
-func RegisterAuthRoutes(router *gin.Engine, handler *AuthHandler) {
-	auth := router.Group("/api/v1/auth")
-	{
-		auth.POST("/register", handler.Register)
-	}
 }

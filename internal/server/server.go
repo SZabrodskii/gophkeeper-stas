@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gopybara/httpbara"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
@@ -15,12 +16,25 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/middleware"
 )
 
-func NewRouter(logger *zap.Logger) *gin.Engine {
+type newRouterParams struct {
+	fx.In
+
+	Handlers []*httpbara.Handler `group:"handlers"`
+	Logger   *zap.Logger
+}
+
+func NewRouter(params newRouterParams) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(middleware.RequestLogger(logger))
-	return r
+	r.Use(middleware.RequestLogger(params.Logger))
+
+	_, err := httpbara.New(params.Handlers, httpbara.WithGinEngine(r))
+	if err != nil {
+		return nil, fmt.Errorf("httpbara engine: %w", err)
+	}
+
+	return r, nil
 }
 
 func StartServer(lc fx.Lifecycle, cfg config.ListenConfig, router *gin.Engine, logger *zap.Logger) {

@@ -24,7 +24,7 @@ const (
 	jwtExpiry = 24 * time.Hour
 )
 
-type AuthServiceParams struct {
+type authServiceParams struct {
 	fx.In
 
 	UserRepo   repository.UserRepository
@@ -36,7 +36,7 @@ type AuthService struct {
 	jwtSecret []byte
 }
 
-func NewAuthService(params AuthServiceParams) *AuthService {
+func NewAuthService(params authServiceParams) *AuthService {
 	return &AuthService{
 		userRepo:  params.UserRepo,
 		jwtSecret: []byte(params.AuthConfig.JWTSecret),

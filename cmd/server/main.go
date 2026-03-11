@@ -21,13 +21,15 @@ func createApp() fx.Option {
 		config.Module,
 		logging.Module,
 		db.Module,
-		fx.Provide(server.NewRouter),
+		fx.Provide(
+			server.NewRouter,
+			handler.NewHealthHandler,
+		),
 		repository.UserModule,
 		service.AuthModule,
 		handler.AuthModule,
 		fx.Invoke(
 			server.StartServer,
-			handler.RegisterHealthRoutes,
 			handler.RegisterSignalHandler),
 	)
 }
