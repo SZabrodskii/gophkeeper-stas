@@ -3,6 +3,8 @@ package logging
 import (
 	"context"
 
+	"github.com/gopybara/httpbara"
+	"github.com/gopybara/httpbara/pkg/httpbarazap"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -24,8 +26,12 @@ func NewLogger(cfg Config) (*zap.Logger, error) {
 	return zapCfg.Build()
 }
 
+func NewHttpbaraLogger(logger *zap.Logger) httpbara.Logger {
+	return httpbarazap.New(logger)
+}
+
 var Module = fx.Module("logging",
-	fx.Provide(NewLogger),
+	fx.Provide(NewLogger, NewHttpbaraLogger),
 	fx.Invoke(func(lc fx.Lifecycle, logger *zap.Logger) {
 		lc.Append(fx.Hook{
 			OnStop: func(_ context.Context) error {

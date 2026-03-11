@@ -5,15 +5,15 @@ import (
 	"go.uber.org/fx"
 )
 
-type fxHandler struct {
+type FxHandler struct {
 	fx.Out
 
 	Handler *httpbara.Handler `group:"handlers"`
 }
 
-func asFxHandler(h *httpbara.Handler, err error) (fxHandler, error) {
+func asFxHandler(h *httpbara.Handler, err error) (FxHandler, error) {
 	if err != nil {
-		return fxHandler{}, err
+		return FxHandler{}, err
 	}
-	return fxHandler{Handler: h}, nil
+	return FxHandler{Handler: h}, nil
 }

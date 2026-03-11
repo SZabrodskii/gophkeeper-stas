@@ -13,23 +13,37 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/SZabrodskii/gophkeeper-stas/internal/config"
-	"github.com/SZabrodskii/gophkeeper-stas/internal/middleware"
 )
 
 type newRouterParams struct {
 	fx.In
 
 	Handlers []*httpbara.Handler `group:"handlers"`
-	Logger   *zap.Logger
+	Logger   httpbara.Logger
+	ZapLog   *zap.Logger
 }
 
 func NewRouter(params newRouterParams) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(middleware.RequestLogger(params.Logger))
 
-	_, err := httpbara.New(params.Handlers, httpbara.WithGinEngine(r))
+	accessLog, err := httpbara.NewAccessLogMiddleware(params.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("access log middleware: %w", err)
+	}
+
+	taskTrackerMw, err := httpbara.NewTaskTrackerMiddleware(params.Logger, httpbara.NewActiveTaskTracker())
+	if err != nil {
+		return nil, fmt.Errorf("task tracker middleware: %w", err)
+	}
+
+	_, err = httpbara.New(params.Handlers,
+		httpbara.WithGinEngine(r),
+		httpbara.WithLogger(params.Logger),
+		httpbara.WithRootMiddlewares(accessLog, taskTrackerMw),
+		httpbara.WithTaskTracker(httpbara.NewActiveTaskTracker()),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("httpbara engine: %w", err)
 	}

@@ -21,7 +21,7 @@ type HealthHandler struct {
 	healthHandlerRoutes
 }
 
-func NewHealthHandler() (fxHandler, error) {
+func NewHealthHandler() (FxHandler, error) {
 	h := &HealthHandler{}
 	return asFxHandler(httpbara.AsHandler(h))
 }

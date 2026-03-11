@@ -40,7 +40,7 @@ type tokenResponse struct {
 	Token string `json:"token"`
 }
 
-func NewAuthHandler(params authHandlerParams) (fxHandler, error) {
+func NewAuthHandler(params authHandlerParams) (FxHandler, error) {
 	h := &AuthHandler{authService: params.AuthService}
 	return asFxHandler(httpbara.AsHandler(h))
 }
