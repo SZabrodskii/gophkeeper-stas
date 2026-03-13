@@ -8,14 +8,26 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gopybara/httpbara"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
-func RegisterHealthRoutes(router *gin.Engine) {
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+type healthHandlerRoutes struct {
+	Health httpbara.Route `route:"GET /health"`
+}
+
+type HealthHandler struct {
+	healthHandlerRoutes
+}
+
+func NewHealthHandler() (FxHandler, error) {
+	h := &HealthHandler{}
+	return asFxHandler(httpbara.AsHandler(h))
+}
+
+func (h *HealthHandler) Health(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func RegisterSignalHandler(lc fx.Lifecycle, shutdowner fx.Shutdowner, logger *zap.Logger) {

@@ -17,8 +17,13 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/config"
 )
 
-func NewDB(lc fx.Lifecycle, cfg *config.ServerConfig, logger *zap.Logger) (*sql.DB, error) {
-	db, err := sql.Open("pgx", cfg.DatabaseDSN)
+// Module предоставляет *sql.DB в DI-контейнер.
+var Module = fx.Module("db",
+	fx.Provide(NewDB),
+)
+
+func NewDB(lc fx.Lifecycle, cfg config.DBConfig, logger *zap.Logger) (*sql.DB, error) {
+	db, err := sql.Open("pgx", cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}

@@ -24,11 +24,11 @@ const (
 	jwtExpiry = 24 * time.Hour
 )
 
-type AuthServiceParams struct {
+type authServiceParams struct {
 	fx.In
 
-	UserRepo repository.UserRepository
-	Config   *config.ServerConfig
+	UserRepo   repository.UserRepository
+	AuthConfig config.AuthConfig
 }
 
 type AuthService struct {
@@ -36,10 +36,10 @@ type AuthService struct {
 	jwtSecret []byte
 }
 
-func NewAuthService(params AuthServiceParams) *AuthService {
+func NewAuthService(params authServiceParams) *AuthService {
 	return &AuthService{
 		userRepo:  params.UserRepo,
-		jwtSecret: []byte(params.Config.JWTSecret),
+		jwtSecret: []byte(params.AuthConfig.JWTSecret),
 	}
 }
 
@@ -83,6 +83,53 @@ func (s *AuthService) Register(ctx context.Context, login, password string) (str
 	}
 
 	return token, nil
+}
+
+func (s *AuthService) Login(ctx context.Context, login, password string) (string, error) {
+	user, err := s.userRepo.GetByLogin(ctx, login)
+	if err != nil {
+		return "", ErrInvalidCredentials
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return "", ErrInvalidCredentials
+	}
+
+	token, err := s.generateJWT(user.ID)
+	if err != nil {
+		return "", fmt.Errorf("generate token: %w", err)
+	}
+
+	return token, nil
+}
+
+func (s *AuthService) ValidateToken(tokenString string) (uuid.UUID, error) {
+	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return s.jwtSecret, nil
+	})
+	if err != nil {
+		return uuid.Nil, ErrInvalidCredentials
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return uuid.Nil, ErrInvalidCredentials
+	}
+
+	userIDStr, ok := claims["user_id"].(string)
+	if !ok {
+		return uuid.Nil, ErrInvalidCredentials
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return uuid.Nil, ErrInvalidCredentials
+	}
+
+	return userID, nil
 }
 
 func (s *AuthService) generateJWT(userID uuid.UUID) (string, error) {

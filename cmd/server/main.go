@@ -13,17 +13,23 @@ import (
 )
 
 func main() {
-	fx.New(
+	fx.New(createApp()).Run()
+}
+
+func createApp() fx.Option {
+	return fx.Options(
 		config.Module,
 		logging.Module,
-		fx.Invoke(db.NewDB),
-		fx.Provide(server.NewRouter),
+		db.Module,
+		fx.Provide(
+			server.NewRouter,
+			handler.NewHealthHandler,
+		),
 		repository.UserModule,
 		service.AuthModule,
 		handler.AuthModule,
 		fx.Invoke(
 			server.StartServer,
-			handler.RegisterHealthRoutes,
 			handler.RegisterSignalHandler),
-	).Run()
+	)
 }
