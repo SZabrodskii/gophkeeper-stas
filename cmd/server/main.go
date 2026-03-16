@@ -26,8 +26,11 @@ func createApp() fx.Option {
 			handler.NewHealthHandler,
 		),
 		repository.UserModule,
+		repository.EntryModule,
 		service.AuthModule,
+		service.EntryModule,
 		handler.AuthModule,
+		handler.EntryModule,
 		fx.Invoke(
 			server.StartServer,
 			handler.RegisterSignalHandler),
