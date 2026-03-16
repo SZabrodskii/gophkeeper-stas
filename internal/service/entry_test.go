@@ -10,7 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SZabrodskii/gophkeeper-stas/internal/crypto"
 	"github.com/SZabrodskii/gophkeeper-stas/internal/model"
+	"github.com/SZabrodskii/gophkeeper-stas/internal/repository"
 )
 
 const testEncryptionKey = "01234567890123456789012345678901"
@@ -33,7 +35,7 @@ func (m *mockEntryRepo) Create(_ context.Context, entry *model.Entry) error {
 func (m *mockEntryRepo) GetByID(_ context.Context, id uuid.UUID) (*model.Entry, error) {
 	e, ok := m.entries[id]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, repository.ErrNotFound
 	}
 	return e, nil
 }
@@ -211,4 +213,108 @@ func TestEntryService_Create_Credential_EncryptionVerify(t *testing.T) {
 	assert.NotEqual(t, []byte("mypassword"), stored.Credential.EncryptedPassword)
 	assert.NotEmpty(t, stored.Credential.EncryptedLogin)
 	assert.NotEmpty(t, stored.Credential.EncryptedPassword)
+}
+
+func createEncryptedEntry(t *testing.T, repo *mockEntryRepo, svc *EntryService, userID uuid.UUID) *model.Entry {
+	t.Helper()
+	entry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeCredential,
+		Name:      "Test Credential",
+		Credential: &model.CredentialData{
+			Login:    "mylogin",
+			Password: "mypassword",
+		},
+	}
+	require.NoError(t, svc.Create(context.Background(), entry))
+	return entry
+}
+
+func TestEntryService_GetByID_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	entry := createEncryptedEntry(t, repo, svc, userID)
+
+	result, err := svc.GetByID(context.Background(), entry.ID, userID)
+	require.NoError(t, err)
+	assert.Equal(t, entry.ID, result.ID)
+	assert.Equal(t, "mylogin", result.Credential.Login)
+	assert.Equal(t, "mypassword", result.Credential.Password)
+}
+
+func TestEntryService_GetByID_NotFound(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	_, err := svc.GetByID(context.Background(), uuid.New(), uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestEntryService_GetByID_WrongUser(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	ownerID := uuid.New()
+	otherID := uuid.New()
+
+	entry := createEncryptedEntry(t, repo, svc, ownerID)
+
+	_, err := svc.GetByID(context.Background(), entry.ID, otherID)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestEntryService_ListByUserID_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	createEncryptedEntry(t, repo, svc, userID)
+	createEncryptedEntry(t, repo, svc, userID)
+	createEncryptedEntry(t, repo, svc, uuid.New()) // different user
+
+	entries, err := svc.ListByUserID(context.Background(), userID)
+	require.NoError(t, err)
+	assert.Len(t, entries, 2)
+}
+
+func TestEntryService_ListByUserID_Empty(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	entries, err := svc.ListByUserID(context.Background(), uuid.New())
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+// Verify that decryption uses actual crypto.Decrypt
+func TestEntryService_GetByID_DecryptionVerify(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	// Manually create an entry with encrypted data to verify decryption path
+	key := []byte(testEncryptionKey)
+	encLogin, err := crypto.Encrypt(key, []byte("directlogin"))
+	require.NoError(t, err)
+	encPass, err := crypto.Encrypt(key, []byte("directpass"))
+	require.NoError(t, err)
+
+	entryID := uuid.New()
+	repo.entries[entryID] = &model.Entry{
+		ID:        entryID,
+		UserID:    userID,
+		EntryType: model.EntryTypeCredential,
+		Name:      "Direct",
+		Credential: &model.CredentialData{
+			EntryID:           entryID,
+			EncryptedLogin:    encLogin,
+			EncryptedPassword: encPass,
+		},
+	}
+
+	result, err := svc.GetByID(context.Background(), entryID, userID)
+	require.NoError(t, err)
+	assert.Equal(t, "directlogin", result.Credential.Login)
+	assert.Equal(t, "directpass", result.Credential.Password)
 }

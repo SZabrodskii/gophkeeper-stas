@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/SZabrodskii/gophkeeper-stas/internal/model"
+	"github.com/SZabrodskii/gophkeeper-stas/internal/repository"
 	"github.com/SZabrodskii/gophkeeper-stas/internal/service"
 )
 
@@ -39,7 +40,7 @@ func (m *mockEntryRepo) Create(_ context.Context, entry *model.Entry) error {
 func (m *mockEntryRepo) GetByID(_ context.Context, id uuid.UUID) (*model.Entry, error) {
 	e, ok := m.entries[id]
 	if !ok {
-		return nil, service.ErrNotFound
+		return nil, repository.ErrNotFound
 	}
 	return e, nil
 }
@@ -246,6 +247,134 @@ func TestCreateEntry_MissingCredentialLogin_400(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func createTestEntry(t *testing.T, r *gin.Engine, token string) uuid.UUID {
+	t.Helper()
+	reqBody := map[string]interface{}{
+		"entry_type": "credential",
+		"name":       "Test Entry",
+		"data": map[string]string{
+			"login":    "testlogin",
+			"password": "testpass",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp createEntryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	return resp.ID
+}
+
+func TestListEntries_Success_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	createTestEntry(t, r, token)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/entries", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var entries []entryListItem
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &entries))
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "Test Entry", entries[0].Name)
+	assert.Equal(t, model.EntryTypeCredential, entries[0].EntryType)
+}
+
+func TestListEntries_Empty_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/entries", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var entries []entryListItem
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &entries))
+	assert.Empty(t, entries)
+}
+
+func TestListEntries_Unauthorized_401(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/entries", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestGetEntry_Success_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	entryID := createTestEntry(t, r, token)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+entryID.String(), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp entryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, entryID, resp.ID)
+	assert.Equal(t, "Test Entry", resp.Name)
+	assert.Equal(t, model.EntryTypeCredential, resp.EntryType)
+
+	data, ok := resp.Data.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "testlogin", data["login"])
+	assert.Equal(t, "testpass", data["password"])
+}
+
+func TestGetEntry_NotFound_404(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+uuid.New().String(), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGetEntry_Unauthorized_401(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+uuid.New().String(), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestGetEntry_InvalidID_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/entries/not-a-uuid", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
