@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -94,4 +95,61 @@ func (s *EntryService) encryptCredential(entry *model.Entry) error {
 	entry.Credential.EntryID = entry.ID
 
 	return nil
+}
+
+func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*model.Entry, error) {
+	entry, err := s.entryRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get entry: %w", err)
+	}
+
+	if entry.UserID != userID {
+		return nil, ErrNotFound
+	}
+
+	switch entry.EntryType {
+	case model.EntryTypeCredential:
+		if err := s.decryptCredential(entry); err != nil {
+			return nil, err
+		}
+	}
+
+	return entry, nil
+}
+
+func (s *EntryService) ListByUserID(ctx context.Context, userID uuid.UUID) ([]model.Entry, error) {
+	result, err := s.entryRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list entries: %w", err)
+	}
+
+	return result, nil
+}
+
+func (s *EntryService) decryptCredential(entry *model.Entry) error {
+	if entry.Credential == nil {
+		return nil
+	}
+
+	if len(entry.Credential.EncryptedLogin) > 0 {
+		login, err := crypto.Decrypt(s.encryptionKey, entry.Credential.EncryptedLogin)
+		if err != nil {
+			return fmt.Errorf("decrypt login: %w", err)
+		}
+		entry.Credential.Login = string(login)
+	}
+
+	if len(entry.Credential.EncryptedPassword) > 0 {
+		pass, err := crypto.Decrypt(s.encryptionKey, entry.Credential.EncryptedPassword)
+		if err != nil {
+			return fmt.Errorf("decrypt password: %w", err)
+		}
+		entry.Credential.Password = string(pass)
+	}
+
+	return nil
+
 }

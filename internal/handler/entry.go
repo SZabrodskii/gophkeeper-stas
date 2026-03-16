@@ -21,6 +21,8 @@ var EntryModule = fx.Module("handler.entry",
 type entryHandlerRoutes struct {
 	V1          httpbara.Group `group:"/api/v1" middlewares:"jwt"`
 	CreateEntry httpbara.Route `route:"POST /entries" group:"v1"`
+	ListEntries httpbara.Route `route:"GET /entries" group:"v1"`
+	GetEntry    httpbara.Route `route:"GET /entries/:id" group:"v1"`
 }
 
 type EntryHandler struct {
@@ -102,4 +104,107 @@ func (h *EntryHandler) CreateEntry(c *gin.Context) {
 		ID:        entry.ID,
 		CreatedAt: entry.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
+}
+
+type entryResponse struct {
+	ID        uuid.UUID        `json:"id"`
+	EntryType model.EntryType  `json:"entry_type"`
+	Name      string           `json:"name"`
+	Metadata  *json.RawMessage `json:"metadata,omitempty"`
+	Data      interface{}      `json:"data,omitempty"`
+	CreatedAt string           `json:"created_at"`
+	UpdatedAt string           `json:"updated_at"`
+}
+
+type entryListItem struct {
+	ID        uuid.UUID        `json:"id"`
+	EntryType model.EntryType  `json:"entry_type"`
+	Name      string           `json:"name"`
+	Metadata  *json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt string           `json:"created_at"`
+	UpdatedAt string           `json:"updated_at"`
+}
+
+func (h *EntryHandler) ListEntries(c *gin.Context) {
+	userIDVal, exists := c.Get(UserIDKey)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	entries, err := h.entryService.ListByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	result := make([]entryListItem, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, entryListItem{
+			ID:        e.ID,
+			EntryType: e.EntryType,
+			Name:      e.Name,
+			Metadata:  e.Metadata,
+			CreatedAt: e.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt: e.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *EntryHandler) GetEntry(c *gin.Context) {
+	userIDVal, exists := c.Get(UserIDKey)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid entry id"})
+		return
+	}
+
+	entry, err := h.entryService.GetByID(c.Request.Context(), id, userID)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "entry not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	resp := entryResponse{
+		ID:        entry.ID,
+		EntryType: entry.EntryType,
+		Name:      entry.Name,
+		Metadata:  entry.Metadata,
+		CreatedAt: entry.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt: entry.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+
+	switch entry.EntryType {
+	case model.EntryTypeCredential:
+		if entry.Credential != nil {
+			resp.Data = map[string]string{
+				"login":    entry.Credential.Login,
+				"password": entry.Credential.Password,
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
