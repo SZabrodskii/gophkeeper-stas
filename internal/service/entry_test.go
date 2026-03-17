@@ -287,6 +287,102 @@ func TestEntryService_ListByUserID_Empty(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
+func TestEntryService_Create_Text_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeText,
+		Name:      "My Note",
+		Text: &model.TextData{
+			Content: "This is my secret note",
+		},
+	}
+
+	err := svc.Create(context.Background(), entry)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, uuid.Nil, entry.ID)
+	assert.NotEmpty(t, entry.Text.EncryptedContent)
+
+	stored, ok := repo.entries[entry.ID]
+	require.True(t, ok)
+	assert.Equal(t, model.EntryTypeText, stored.EntryType)
+	assert.Equal(t, "My Note", stored.Name)
+}
+
+func TestEntryService_Create_Text_EmptyContent(t *testing.T) {
+	svc := newTestEntryService(newMockEntryRepo())
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeText,
+		Name:      "Test",
+		Text: &model.TextData{
+			Content: "",
+		},
+	}
+
+	err := svc.Create(context.Background(), entry)
+	assert.ErrorIs(t, err, ErrValidation)
+}
+
+func TestEntryService_Create_Text_MissingData(t *testing.T) {
+	svc := newTestEntryService(newMockEntryRepo())
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeText,
+		Name:      "Test",
+	}
+
+	err := svc.Create(context.Background(), entry)
+	assert.ErrorIs(t, err, ErrValidation)
+}
+
+func TestEntryService_Create_Text_EncryptionVerify(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeText,
+		Name:      "Encrypted Text",
+		Text: &model.TextData{
+			Content: "my secret content",
+		},
+	}
+
+	err := svc.Create(context.Background(), entry)
+	require.NoError(t, err)
+
+	stored := repo.entries[entry.ID]
+	assert.NotEqual(t, []byte("my secret content"), stored.Text.EncryptedContent)
+	assert.NotEmpty(t, stored.Text.EncryptedContent)
+}
+
+func TestEntryService_GetByID_Text_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	entry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeText,
+		Name:      "My Note",
+		Text: &model.TextData{
+			Content: "round trip content",
+		},
+	}
+	require.NoError(t, svc.Create(context.Background(), entry))
+
+	result, err := svc.GetByID(context.Background(), entry.ID, userID)
+	require.NoError(t, err)
+	assert.Equal(t, entry.ID, result.ID)
+	assert.Equal(t, "round trip content", result.Text.Content)
+}
+
 // Verify that decryption uses actual crypto.Decrypt
 func TestEntryService_GetByID_DecryptionVerify(t *testing.T) {
 	repo := newMockEntryRepo()
