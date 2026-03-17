@@ -370,6 +370,96 @@ func TestGetEntry_Unauthorized_401(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+func TestCreateEntry_Text_Success_201(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "text",
+		"name":       "My Note",
+		"data": map[string]string{
+			"content": "This is my secret note",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp createEntryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.NotEqual(t, uuid.Nil, resp.ID)
+	assert.NotEmpty(t, resp.CreatedAt)
+}
+
+func TestGetEntry_Text_Success_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	// Create text entry
+	reqBody := map[string]interface{}{
+		"entry_type": "text",
+		"name":       "My Note",
+		"data": map[string]string{
+			"content": "decrypted text content",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	cw := httptest.NewRecorder()
+	r.ServeHTTP(cw, createReq)
+	require.Equal(t, http.StatusCreated, cw.Code)
+
+	var createResp createEntryResponse
+	require.NoError(t, json.Unmarshal(cw.Body.Bytes(), &createResp))
+
+	// Get text entry
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+createResp.ID.String(), nil)
+	getReq.Header.Set("Authorization", "Bearer "+token)
+	gw := httptest.NewRecorder()
+	r.ServeHTTP(gw, getReq)
+
+	assert.Equal(t, http.StatusOK, gw.Code)
+
+	var resp entryResponse
+	require.NoError(t, json.Unmarshal(gw.Body.Bytes(), &resp))
+	assert.Equal(t, createResp.ID, resp.ID)
+	assert.Equal(t, model.EntryTypeText, resp.EntryType)
+
+	data, ok := resp.Data.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "decrypted text content", data["content"])
+}
+
+func TestCreateEntry_Text_EmptyContent_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "text",
+		"name":       "Empty Note",
+		"data": map[string]string{
+			"content": "",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestGetEntry_InvalidID_400(t *testing.T) {
 	r, _, _ := setupEntryRouter()
 	token := getTestToken(t, r)
