@@ -86,6 +86,13 @@ func (h *EntryHandler) CreateEntry(c *gin.Context) {
 			return
 		}
 		entry.Credential = &cred
+	case model.EntryTypeText:
+		var text model.TextData
+		if err := json.Unmarshal(req.Data, &text); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid text data"})
+			return
+		}
+		entry.Text = &text
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported entry type"})
 		return
@@ -202,6 +209,12 @@ func (h *EntryHandler) GetEntry(c *gin.Context) {
 			resp.Data = map[string]string{
 				"login":    entry.Credential.Login,
 				"password": entry.Credential.Password,
+			}
+		}
+	case model.EntryTypeText:
+		if entry.Text != nil {
+			resp.Data = map[string]string{
+				"content": entry.Text.Content,
 			}
 		}
 	}

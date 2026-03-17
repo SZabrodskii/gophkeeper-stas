@@ -74,6 +74,17 @@ func (r *PostgresEntryRepository) Create(ctx context.Context, entry *model.Entry
 		if err != nil {
 			return fmt.Errorf("insert credential data: %w", err)
 		}
+	case model.EntryTypeText:
+		if entry.Text == nil {
+			return fmt.Errorf("text data is required for text entry type")
+		}
+		textQuery := `INSERT INTO text_data (entry_id, encrypted_content)
+			VALUES ($1, $2)`
+		_, err = tx.ExecContext(ctx, textQuery,
+			entry.ID, entry.Text.EncryptedContent)
+		if err != nil {
+			return fmt.Errorf("insert text data: %w", err)
+		}
 	default:
 		return fmt.Errorf("unsupported entry type: %s", entry.EntryType)
 	}
@@ -113,6 +124,12 @@ func (r *PostgresEntryRepository) GetByID(ctx context.Context, id uuid.UUID) (*m
 			return nil, fmt.Errorf("get credential data: %w", err)
 		}
 		entry.Credential = cred
+	case model.EntryTypeText:
+		text, err := r.getTextData(ctx, entry.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get text data: %w", err)
+		}
+		entry.Text = text
 	}
 
 	return &entry, nil
@@ -130,6 +147,20 @@ func (r *PostgresEntryRepository) getCredentialData(ctx context.Context, entryID
 		return nil, fmt.Errorf("get credential data: %w", err)
 	}
 	return &cred, nil
+}
+
+func (r *PostgresEntryRepository) getTextData(ctx context.Context, entryID uuid.UUID) (*model.TextData, error) {
+	query := `SELECT entry_id, encrypted_content FROM text_data WHERE entry_id = $1`
+	var text model.TextData
+	err := r.db.QueryRowContext(ctx, query, entryID).Scan(
+		&text.EntryID, &text.EncryptedContent)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get text data: %w", err)
+	}
+	return &text, nil
 }
 
 func (r *PostgresEntryRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]model.Entry, error) {

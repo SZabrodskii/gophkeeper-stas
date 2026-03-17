@@ -59,6 +59,10 @@ func (s *EntryService) Create(ctx context.Context, entry *model.Entry) error {
 		if err := s.encryptCredential(entry); err != nil {
 			return err
 		}
+	case model.EntryTypeText:
+		if err := s.encryptText(entry); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("%w: unsupported entry type: %s", ErrValidation, entry.EntryType)
 	}
@@ -115,6 +119,10 @@ func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UU
 		if err := s.decryptCredential(entry); err != nil {
 			return nil, err
 		}
+	case model.EntryTypeText:
+		if err := s.decryptText(entry); err != nil {
+			return nil, err
+		}
 	}
 
 	return entry, nil
@@ -127,6 +135,41 @@ func (s *EntryService) ListByUserID(ctx context.Context, userID uuid.UUID) ([]mo
 	}
 
 	return result, nil
+}
+
+func (s *EntryService) encryptText(entry *model.Entry) error {
+	if entry.Text == nil {
+		return fmt.Errorf("%w: text data is required", ErrValidation)
+	}
+	if entry.Text.Content == "" {
+		return fmt.Errorf("%w: content is required for text entry", ErrValidation)
+	}
+
+	encContent, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Text.Content))
+	if err != nil {
+		return fmt.Errorf("encrypt content: %w", err)
+	}
+
+	entry.Text.EncryptedContent = encContent
+	entry.Text.EntryID = entry.ID
+
+	return nil
+}
+
+func (s *EntryService) decryptText(entry *model.Entry) error {
+	if entry.Text == nil {
+		return nil
+	}
+
+	if len(entry.Text.EncryptedContent) > 0 {
+		content, err := crypto.Decrypt(s.encryptionKey, entry.Text.EncryptedContent)
+		if err != nil {
+			return fmt.Errorf("decrypt content: %w", err)
+		}
+		entry.Text.Content = string(content)
+	}
+
+	return nil
 }
 
 func (s *EntryService) decryptCredential(entry *model.Entry) error {
