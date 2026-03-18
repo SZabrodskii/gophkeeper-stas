@@ -460,6 +460,108 @@ func TestCreateEntry_Text_EmptyContent_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestCreateEntry_Card_Success_201(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "card",
+		"name":       "My Visa",
+		"data": map[string]string{
+			"number":      "4532015112830366",
+			"expiry":      "12/25",
+			"holder_name": "John Doe",
+			"cvv":         "123",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp createEntryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.NotEqual(t, uuid.Nil, resp.ID)
+	assert.NotEmpty(t, resp.CreatedAt)
+}
+
+func TestGetEntry_Card_Success_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	// Create card entry
+	reqBody := map[string]interface{}{
+		"entry_type": "card",
+		"name":       "My Visa",
+		"data": map[string]string{
+			"number":      "4532015112830366",
+			"expiry":      "12/25",
+			"holder_name": "John Doe",
+			"cvv":         "123",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	cw := httptest.NewRecorder()
+	r.ServeHTTP(cw, createReq)
+	require.Equal(t, http.StatusCreated, cw.Code)
+
+	var createResp createEntryResponse
+	require.NoError(t, json.Unmarshal(cw.Body.Bytes(), &createResp))
+
+	// Get card entry
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+createResp.ID.String(), nil)
+	getReq.Header.Set("Authorization", "Bearer "+token)
+	gw := httptest.NewRecorder()
+	r.ServeHTTP(gw, getReq)
+
+	assert.Equal(t, http.StatusOK, gw.Code)
+
+	var resp entryResponse
+	require.NoError(t, json.Unmarshal(gw.Body.Bytes(), &resp))
+	assert.Equal(t, createResp.ID, resp.ID)
+	assert.Equal(t, model.EntryTypeCard, resp.EntryType)
+
+	data, ok := resp.Data.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "4532015112830366", data["number"])
+	assert.Equal(t, "12/25", data["expiry"])
+	assert.Equal(t, "John Doe", data["holder_name"])
+	assert.Equal(t, "123", data["cvv"])
+}
+
+func TestCreateEntry_Card_InvalidLuhn_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "card",
+		"name":       "Bad Card",
+		"data": map[string]string{
+			"number":      "1234567890",
+			"expiry":      "12/25",
+			"holder_name": "John Doe",
+			"cvv":         "123",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestGetEntry_InvalidID_400(t *testing.T) {
 	r, _, _ := setupEntryRouter()
 	token := getTestToken(t, r)

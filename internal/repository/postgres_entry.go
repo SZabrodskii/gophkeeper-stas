@@ -85,6 +85,18 @@ func (r *PostgresEntryRepository) Create(ctx context.Context, entry *model.Entry
 		if err != nil {
 			return fmt.Errorf("insert text data: %w", err)
 		}
+	case model.EntryTypeCard:
+		if entry.Card == nil {
+			return fmt.Errorf("card data is required for card entry type")
+		}
+		cardQuery := `INSERT INTO card_data (entry_id, encrypted_number, encrypted_expiry, encrypted_holder_name, encrypted_cvv)
+          VALUES ($1, $2, $3, $4, $5)`
+		_, err = tx.ExecContext(ctx, cardQuery,
+			entry.ID, entry.Card.EncryptedNumber, entry.Card.EncryptedExpiry,
+			entry.Card.EncryptedHolderName, entry.Card.EncryptedCVV)
+		if err != nil {
+			return fmt.Errorf("insert card data: %w", err)
+		}
 	default:
 		return fmt.Errorf("unsupported entry type: %s", entry.EntryType)
 	}
@@ -130,6 +142,12 @@ func (r *PostgresEntryRepository) GetByID(ctx context.Context, id uuid.UUID) (*m
 			return nil, fmt.Errorf("get text data: %w", err)
 		}
 		entry.Text = text
+	case model.EntryTypeCard:
+		card, err := r.getCardData(ctx, entry.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get card data: %w", err)
+		}
+		entry.Card = card
 	}
 
 	return &entry, nil
@@ -161,6 +179,21 @@ func (r *PostgresEntryRepository) getTextData(ctx context.Context, entryID uuid.
 		return nil, fmt.Errorf("get text data: %w", err)
 	}
 	return &text, nil
+}
+
+func (r *PostgresEntryRepository) getCardData(ctx context.Context, entryID uuid.UUID) (*model.CardData, error) {
+	query := `SELECT entry_id, encrypted_number, encrypted_expiry, encrypted_holder_name, encrypted_cvv FROM card_data WHERE entry_id = $1`
+	var card model.CardData
+	err := r.db.QueryRowContext(ctx, query, entryID).Scan(
+		&card.EntryID, &card.EncryptedNumber, &card.EncryptedExpiry,
+		&card.EncryptedHolderName, &card.EncryptedCVV)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get card data: %w", err)
+	}
+	return &card, nil
 }
 
 func (r *PostgresEntryRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]model.Entry, error) {

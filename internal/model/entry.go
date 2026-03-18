@@ -2,6 +2,8 @@ package model
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -70,6 +72,59 @@ type CardData struct {
 	Expiry              string    `json:"expiry,omitempty"`
 	HolderName          string    `json:"holder_name,omitempty"`
 	CVV                 string    `json:"cvv,omitempty"`
+}
+
+func ValidateLuhn(number string) bool {
+	cleaned := strings.ReplaceAll(number, " ", "")
+	cleaned = strings.ReplaceAll(cleaned, "-", "")
+
+	if len(cleaned) < 2 {
+		return false
+	}
+
+	for _, r := range cleaned {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	var sum int
+	var alternate bool
+	for i := len(cleaned) - 1; i >= 0; i-- {
+		digit := int(cleaned[i] - '0')
+		if alternate {
+			digit *= 2
+			if digit > 9 {
+				digit -= 9
+			}
+		}
+		sum += digit
+		alternate = !alternate
+
+	}
+	return sum%10 == 0
+}
+
+func ValidateExpiry(expiry string) bool {
+	parts := strings.Split(expiry, "/")
+	if len(parts) != 2 {
+		return false
+	}
+
+	if len(parts[0]) != 2 {
+		return false
+	}
+	month, err := strconv.Atoi(parts[0])
+	if err != nil || month < 1 || month > 12 {
+		return false
+	}
+	if len(parts[1]) != 2 {
+		return false
+	}
+
+	_, err = strconv.Atoi(parts[1])
+
+	return err == nil
 }
 
 type Metadata map[string]string
