@@ -93,6 +93,13 @@ func (h *EntryHandler) CreateEntry(c *gin.Context) {
 			return
 		}
 		entry.Text = &text
+	case model.EntryTypeCard:
+		var card model.CardData
+		if err := json.Unmarshal(req.Data, &card); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid card data"})
+			return
+		}
+		entry.Card = &card
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported entry type"})
 		return
@@ -217,7 +224,16 @@ func (h *EntryHandler) GetEntry(c *gin.Context) {
 				"content": entry.Text.Content,
 			}
 		}
-	}
+	case model.EntryTypeCard:
+		if entry.Card != nil {
+			resp.Data = map[string]string{
+				"number":      entry.Card.Number,
+				"expiry":      entry.Card.Expiry,
+				"holder_name": entry.Card.HolderName,
+				"cvv":         entry.Card.CVV,
+			}
+		}
 
+	}
 	c.JSON(http.StatusOK, resp)
 }

@@ -63,6 +63,10 @@ func (s *EntryService) Create(ctx context.Context, entry *model.Entry) error {
 		if err := s.encryptText(entry); err != nil {
 			return err
 		}
+	case model.EntryTypeCard:
+		if err := s.encryptCard(entry); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("%w: unsupported entry type: %s", ErrValidation, entry.EntryType)
 	}
@@ -123,6 +127,10 @@ func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UU
 		if err := s.decryptText(entry); err != nil {
 			return nil, err
 		}
+	case model.EntryTypeCard:
+		if err := s.decryptCard(entry); err != nil {
+			return nil, err
+		}
 	}
 
 	return entry, nil
@@ -167,6 +175,89 @@ func (s *EntryService) decryptText(entry *model.Entry) error {
 			return fmt.Errorf("decrypt content: %w", err)
 		}
 		entry.Text.Content = string(content)
+	}
+
+	return nil
+}
+
+func (s *EntryService) encryptCard(entry *model.Entry) error {
+	if entry.Card == nil {
+		return fmt.Errorf("%w: card data is required", ErrValidation)
+	}
+	if entry.Card.Number == "" {
+		return fmt.Errorf("%w: number is required for card entry", ErrValidation)
+	}
+	if !model.ValidateLuhn(entry.Card.Number) {
+		return fmt.Errorf("%w: invalid card number", ErrValidation)
+	}
+	if entry.Card.Expiry == "" {
+		return fmt.Errorf("%w: expiry is required for card entry", ErrValidation)
+	}
+	if !model.ValidateExpiry(entry.Card.Expiry) {
+		return fmt.Errorf("%w: invalid card expiry", ErrValidation)
+	}
+	if entry.Card.HolderName == "" {
+		return fmt.Errorf("%w: holder name is required for card entry", ErrValidation)
+	}
+	if entry.Card.CVV == "" {
+		return fmt.Errorf("%w: CVV is required for card entry", ErrValidation)
+	}
+
+	encNumber, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Card.Number))
+	if err != nil {
+		return fmt.Errorf("encrypt number: %w", err)
+	}
+	encExpiry, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Card.Expiry))
+	if err != nil {
+		return fmt.Errorf("encrypt expiry: %w", err)
+	}
+	encHolderName, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Card.HolderName))
+	if err != nil {
+		return fmt.Errorf("encrypt holder name: %w", err)
+	}
+	encCVV, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Card.CVV))
+	if err != nil {
+		return fmt.Errorf("encrypt CVV: %w", err)
+	}
+
+	entry.Card.EncryptedNumber = encNumber
+	entry.Card.EncryptedExpiry = encExpiry
+	entry.Card.EncryptedHolderName = encHolderName
+	entry.Card.EncryptedCVV = encCVV
+	entry.Card.EntryID = entry.ID
+
+	return nil
+}
+
+func (s *EntryService) decryptCard(entry *model.Entry) error {
+	if entry.Card == nil {
+		return nil
+	}
+	if len(entry.Card.EncryptedNumber) > 0 {
+		number, err := crypto.Decrypt(s.encryptionKey, entry.Card.EncryptedNumber)
+		if err != nil {
+			return fmt.Errorf("decrypt number: %w", err)
+		}
+		entry.Card.Number = string(number)
+
+		expiry, err := crypto.Decrypt(s.encryptionKey, entry.Card.EncryptedExpiry)
+		if err != nil {
+			return fmt.Errorf("decrypt expiry: %w", err)
+		}
+		entry.Card.Expiry = string(expiry)
+
+		holderName, err := crypto.Decrypt(s.encryptionKey, entry.Card.EncryptedHolderName)
+		if err != nil {
+			return fmt.Errorf("decrypt holder name: %w", err)
+		}
+		entry.Card.HolderName = string(holderName)
+
+		cvv, err := crypto.Decrypt(s.encryptionKey, entry.Card.EncryptedCVV)
+		if err != nil {
+			return fmt.Errorf("decrypt CVV: %w", err)
+		}
+		entry.Card.CVV = string(cvv)
+
 	}
 
 	return nil
