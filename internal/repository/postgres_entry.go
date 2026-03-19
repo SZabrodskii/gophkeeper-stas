@@ -97,6 +97,15 @@ func (r *PostgresEntryRepository) Create(ctx context.Context, entry *model.Entry
 		if err != nil {
 			return fmt.Errorf("insert card data: %w", err)
 		}
+	case model.EntryTypeBinary:
+		if entry.Binary == nil {
+			return fmt.Errorf("binary data is required for binary entry type")
+		}
+		binaryQuery := `INSERT INTO binary_data (entry_id, encrypted_data, original_filename)  VALUES ($1, $2, $3)`
+		_, err = tx.ExecContext(ctx, binaryQuery, entry.ID, entry.Binary.EncryptedData, entry.Binary.OriginalFilename)
+		if err != nil {
+			return fmt.Errorf("insert binary data: %w", err)
+		}
 	default:
 		return fmt.Errorf("unsupported entry type: %s", entry.EntryType)
 	}
@@ -148,6 +157,12 @@ func (r *PostgresEntryRepository) GetByID(ctx context.Context, id uuid.UUID) (*m
 			return nil, fmt.Errorf("get card data: %w", err)
 		}
 		entry.Card = card
+	case model.EntryTypeBinary:
+		binary, err := r.getBinaryData(ctx, entry.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get binary data: %w", err)
+		}
+		entry.Binary = binary
 	}
 
 	return &entry, nil
@@ -194,6 +209,20 @@ func (r *PostgresEntryRepository) getCardData(ctx context.Context, entryID uuid.
 		return nil, fmt.Errorf("get card data: %w", err)
 	}
 	return &card, nil
+}
+
+func (r *PostgresEntryRepository) getBinaryData(ctx context.Context, entryID uuid.UUID) (*model.BinaryData, error) {
+	query := `SELECT entry_id, encrypted_data, original_filename FROM binary_data WHERE entry_id = $1`
+	var binary model.BinaryData
+	err := r.db.QueryRowContext(ctx, query, entryID).Scan(
+		&binary.EntryID, &binary.EncryptedData, &binary.OriginalFilename)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get binary data: %w", err)
+	}
+	return &binary, nil
 }
 
 func (r *PostgresEntryRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]model.Entry, error) {
