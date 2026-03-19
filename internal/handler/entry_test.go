@@ -3,9 +3,11 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,7 +71,7 @@ func setupEntryRouter() (*gin.Engine, *service.EntryService, *service.AuthServic
 	authHandler := &AuthHandler{authService: authSvc}
 
 	entryRepo := newMockEntryRepo()
-	entrySvc := service.NewEntryServiceFromRaw(entryRepo, testEntryEncryptionKey)
+	entrySvc := service.NewEntryServiceFromRaw(entryRepo, testEntryEncryptionKey, 10*1024*1024)
 	entryHandler := &EntryHandler{entryService: entrySvc}
 
 	authH, err := httpbara.AsHandler(authHandler)
@@ -572,4 +574,135 @@ func TestGetEntry_InvalidID_400(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func setupEntryRouterWithMaxBinary(maxSize int64) (*gin.Engine, *service.EntryService, *service.AuthService) {
+	gin.SetMode(gin.TestMode)
+
+	userRepo := newMockUserRepo()
+	authSvc := service.NewAuthServiceFromRaw(userRepo, testJWTSecret)
+	authHandler := &AuthHandler{authService: authSvc}
+
+	entryRepo := newMockEntryRepo()
+	entrySvc := service.NewEntryServiceFromRaw(entryRepo, testEntryEncryptionKey, maxSize)
+	entryHandler := &EntryHandler{entryService: entrySvc}
+
+	authH, err := httpbara.AsHandler(authHandler)
+	if err != nil {
+		panic(err)
+	}
+	entryH, err := httpbara.AsHandler(entryHandler)
+	if err != nil {
+		panic(err)
+	}
+
+	r := gin.New()
+	if _, err := httpbara.New([]*httpbara.Handler{authH, entryH}, httpbara.WithGinEngine(r)); err != nil {
+		panic(err)
+	}
+	return r, entrySvc, authSvc
+}
+
+func TestCreateEntry_Binary_Success_201(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	rawData := []byte("hello binary world")
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "binary",
+		"name":       "My File",
+		"data": map[string]string{
+			"data":              b64Data,
+			"original_filename": "test.bin",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp createEntryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.NotEqual(t, uuid.Nil, resp.ID)
+	assert.NotEmpty(t, resp.CreatedAt)
+}
+
+func TestGetEntry_Binary_Success_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	rawData := []byte("round trip binary via HTTP")
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+
+	// Create binary entry
+	reqBody := map[string]interface{}{
+		"entry_type": "binary",
+		"name":       "My File",
+		"data": map[string]string{
+			"data":              b64Data,
+			"original_filename": "roundtrip.bin",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	cw := httptest.NewRecorder()
+	r.ServeHTTP(cw, createReq)
+	require.Equal(t, http.StatusCreated, cw.Code)
+
+	var createResp createEntryResponse
+	require.NoError(t, json.Unmarshal(cw.Body.Bytes(), &createResp))
+
+	// Get binary entry
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+createResp.ID.String(), nil)
+	getReq.Header.Set("Authorization", "Bearer "+token)
+	gw := httptest.NewRecorder()
+	r.ServeHTTP(gw, getReq)
+
+	assert.Equal(t, http.StatusOK, gw.Code)
+
+	var resp entryResponse
+	require.NoError(t, json.Unmarshal(gw.Body.Bytes(), &resp))
+	assert.Equal(t, createResp.ID, resp.ID)
+	assert.Equal(t, model.EntryTypeBinary, resp.EntryType)
+
+	data, ok := resp.Data.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, b64Data, data["data"])
+	assert.Equal(t, "roundtrip.bin", data["original_filename"])
+}
+
+func TestCreateEntry_Binary_TooLarge_413(t *testing.T) {
+	r, _, _ := setupEntryRouterWithMaxBinary(10) // 10 bytes max
+	token := getTestToken(t, r)
+
+	// Create data larger than 10 bytes
+	rawData := []byte(strings.Repeat("x", 11))
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "binary",
+		"name":       "Too Big",
+		"data": map[string]string{
+			"data":              b64Data,
+			"original_filename": "big.bin",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
 }
