@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -21,26 +22,30 @@ var EntryModule = fx.Module("service.entry",
 type entryServiceParams struct {
 	fx.In
 
-	EntryRepo  repository.EntryRepository
-	AuthConfig config.AuthConfig
+	EntryRepo    repository.EntryRepository
+	AuthConfig   config.AuthConfig
+	ServerConfig *config.ServerConfig
 }
 
 type EntryService struct {
 	entryRepo     repository.EntryRepository
 	encryptionKey []byte
+	maxBinarySize int64
 }
 
 func NewEntryService(params entryServiceParams) *EntryService {
 	return &EntryService{
 		entryRepo:     params.EntryRepo,
 		encryptionKey: []byte(params.AuthConfig.EncryptionKey),
+		maxBinarySize: params.ServerConfig.MaxBinarySize,
 	}
 }
 
-func NewEntryServiceFromRaw(entryRepo repository.EntryRepository, encryptionKey string) *EntryService {
+func NewEntryServiceFromRaw(entryRepo repository.EntryRepository, encryptionKey string, maxBinarySize int64) *EntryService {
 	return &EntryService{
 		entryRepo:     entryRepo,
 		encryptionKey: []byte(encryptionKey),
+		maxBinarySize: maxBinarySize,
 	}
 }
 
@@ -65,6 +70,10 @@ func (s *EntryService) Create(ctx context.Context, entry *model.Entry) error {
 		}
 	case model.EntryTypeCard:
 		if err := s.encryptCard(entry); err != nil {
+			return err
+		}
+	case model.EntryTypeBinary:
+		if err := s.encryptBinary(entry); err != nil {
 			return err
 		}
 	default:
@@ -129,6 +138,10 @@ func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UU
 		}
 	case model.EntryTypeCard:
 		if err := s.decryptCard(entry); err != nil {
+			return nil, err
+		}
+	case model.EntryTypeBinary:
+		if err := s.decryptBinary(entry); err != nil {
 			return nil, err
 		}
 	}
@@ -286,4 +299,52 @@ func (s *EntryService) decryptCredential(entry *model.Entry) error {
 
 	return nil
 
+}
+
+func (s *EntryService) encryptBinary(entry *model.Entry) error {
+	if entry.Binary == nil {
+		return fmt.Errorf("%w: binary data is required", ErrValidation)
+	}
+	if entry.Binary.Data == "" {
+		return fmt.Errorf("%w: data is required for binary entry", ErrValidation)
+	}
+	//if int64(len(entry.Binary.Data)) > s.maxBinarySize {
+	//	return fmt.Errorf("%w: data is too large", ErrValidation)
+	//}
+
+	raw, err := base64.StdEncoding.DecodeString(entry.Binary.Data)
+	if err != nil {
+		return fmt.Errorf("decode base64: %w", err)
+	}
+
+	if int64(len(raw)) > s.maxBinarySize {
+		return fmt.Errorf("%w: data is too large", ErrPayloadTooLarge)
+	}
+
+	encData, err := crypto.Encrypt(s.encryptionKey, raw)
+	if err != nil {
+		return fmt.Errorf("encrypt data: %w", err)
+	}
+
+	entry.Binary.EncryptedData = encData
+	entry.Binary.EntryID = entry.ID
+
+	return nil
+
+}
+
+func (s *EntryService) decryptBinary(entry *model.Entry) error {
+	if entry.Binary == nil {
+		return nil
+	}
+
+	if len(entry.Binary.EncryptedData) > 0 {
+		raw, err := crypto.Decrypt(s.encryptionKey, entry.Binary.EncryptedData)
+		if err != nil {
+			return fmt.Errorf("decrypt binary data: %w", err)
+		}
+		entry.Binary.Data = base64.StdEncoding.EncodeToString(raw)
+	}
+
+	return nil
 }

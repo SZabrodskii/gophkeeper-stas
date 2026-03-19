@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,7 +65,11 @@ func (m *mockEntryRepo) ListUpdatedAfter(_ context.Context, userID uuid.UUID, si
 }
 
 func newTestEntryService(repo *mockEntryRepo) *EntryService {
-	return NewEntryServiceFromRaw(repo, testEncryptionKey)
+	return NewEntryServiceFromRaw(repo, testEncryptionKey, 10*1024*1024)
+}
+
+func newTestEntryServiceWithMaxBinary(repo *mockEntryRepo, maxSize int64) *EntryService {
+	return NewEntryServiceFromRaw(repo, testEncryptionKey, maxSize)
 }
 
 func TestEntryService_Create_Credential_Success(t *testing.T) {
@@ -579,4 +585,136 @@ func TestEntryService_GetByID_DecryptionVerify(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "directlogin", result.Credential.Login)
 	assert.Equal(t, "directpass", result.Credential.Password)
+}
+
+func TestEntryService_Create_Binary_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	rawData := []byte("hello binary world")
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeBinary,
+		Name:      "My File",
+		Binary: &model.BinaryData{
+			Data:             b64Data,
+			OriginalFilename: "test.bin",
+		},
+	}
+
+	err := svc.Create(context.Background(), entry)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, uuid.Nil, entry.ID)
+	assert.NotEmpty(t, entry.Binary.EncryptedData)
+
+	stored, ok := repo.entries[entry.ID]
+	require.True(t, ok)
+	assert.Equal(t, model.EntryTypeBinary, stored.EntryType)
+	assert.Equal(t, "My File", stored.Name)
+	assert.Equal(t, "test.bin", stored.Binary.OriginalFilename)
+}
+
+func TestEntryService_Create_Binary_MissingData(t *testing.T) {
+	svc := newTestEntryService(newMockEntryRepo())
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeBinary,
+		Name:      "Test",
+	}
+
+	err := svc.Create(context.Background(), entry)
+	assert.ErrorIs(t, err, ErrValidation)
+}
+
+func TestEntryService_Create_Binary_EmptyData(t *testing.T) {
+	svc := newTestEntryService(newMockEntryRepo())
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeBinary,
+		Name:      "Test",
+		Binary: &model.BinaryData{
+			Data: "",
+		},
+	}
+
+	err := svc.Create(context.Background(), entry)
+	assert.ErrorIs(t, err, ErrValidation)
+}
+
+func TestEntryService_Create_Binary_ExceedsMaxSize(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryServiceWithMaxBinary(repo, 10) // 10 bytes max
+
+	// Create data larger than 10 bytes
+	rawData := []byte(strings.Repeat("x", 11))
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeBinary,
+		Name:      "Too Big",
+		Binary: &model.BinaryData{
+			Data:             b64Data,
+			OriginalFilename: "big.bin",
+		},
+	}
+
+	err := svc.Create(context.Background(), entry)
+	assert.ErrorIs(t, err, ErrPayloadTooLarge)
+}
+
+func TestEntryService_Create_Binary_EncryptionVerify(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	rawData := []byte("secret binary content")
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+
+	entry := &model.Entry{
+		UserID:    uuid.New(),
+		EntryType: model.EntryTypeBinary,
+		Name:      "Encrypted Binary",
+		Binary: &model.BinaryData{
+			Data:             b64Data,
+			OriginalFilename: "secret.bin",
+		},
+	}
+
+	err := svc.Create(context.Background(), entry)
+	require.NoError(t, err)
+
+	stored := repo.entries[entry.ID]
+	assert.NotEqual(t, rawData, stored.Binary.EncryptedData)
+	assert.NotEmpty(t, stored.Binary.EncryptedData)
+}
+
+func TestEntryService_GetByID_Binary_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	rawData := []byte("round trip binary data")
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+
+	entry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeBinary,
+		Name:      "My File",
+		Binary: &model.BinaryData{
+			Data:             b64Data,
+			OriginalFilename: "roundtrip.bin",
+		},
+	}
+	require.NoError(t, svc.Create(context.Background(), entry))
+
+	result, err := svc.GetByID(context.Background(), entry.ID, userID)
+	require.NoError(t, err)
+	assert.Equal(t, entry.ID, result.ID)
+	assert.Equal(t, b64Data, result.Binary.Data)
+	assert.Equal(t, "roundtrip.bin", result.Binary.OriginalFilename)
 }

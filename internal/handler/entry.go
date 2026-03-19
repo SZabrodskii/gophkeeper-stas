@@ -100,6 +100,13 @@ func (h *EntryHandler) CreateEntry(c *gin.Context) {
 			return
 		}
 		entry.Card = &card
+	case model.EntryTypeBinary:
+		var binary model.BinaryData
+		if err := json.Unmarshal(req.Data, &binary); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid binary data"})
+			return
+		}
+		entry.Binary = &binary
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported entry type"})
 		return
@@ -108,6 +115,10 @@ func (h *EntryHandler) CreateEntry(c *gin.Context) {
 	if err := h.entryService.Create(c.Request.Context(), entry); err != nil {
 		if errors.Is(err, service.ErrValidation) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, service.ErrPayloadTooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -231,6 +242,13 @@ func (h *EntryHandler) GetEntry(c *gin.Context) {
 				"expiry":      entry.Card.Expiry,
 				"holder_name": entry.Card.HolderName,
 				"cvv":         entry.Card.CVV,
+			}
+		}
+	case model.EntryTypeBinary:
+		if entry.Binary != nil {
+			resp.Data = map[string]string{
+				"data":              entry.Binary.Data,
+				"original_filename": entry.Binary.OriginalFilename,
 			}
 		}
 
