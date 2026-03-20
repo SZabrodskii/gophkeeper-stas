@@ -57,8 +57,22 @@ func (m *mockEntryRepo) ListByUserID(_ context.Context, userID uuid.UUID) ([]mod
 	return result, nil
 }
 
-func (m *mockEntryRepo) Update(_ context.Context, entry *model.Entry) error { return nil }
-func (m *mockEntryRepo) Delete(_ context.Context, id uuid.UUID) error       { return nil }
+func (m *mockEntryRepo) Update(_ context.Context, entry *model.Entry) error {
+	if _, ok := m.entries[entry.ID]; !ok {
+		return repository.ErrNotFound
+	}
+	entry.UpdatedAt = time.Now()
+	m.entries[entry.ID] = entry
+	return nil
+}
+
+func (m *mockEntryRepo) Delete(_ context.Context, id uuid.UUID) error {
+	if _, ok := m.entries[id]; !ok {
+		return repository.ErrNotFound
+	}
+	delete(m.entries, id)
+	return nil
+}
 func (m *mockEntryRepo) ListUpdatedAfter(_ context.Context, userID uuid.UUID, since time.Time) ([]model.Entry, error) {
 	return nil, nil
 }
@@ -705,4 +719,196 @@ func TestCreateEntry_Binary_TooLarge_413(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+}
+
+func TestUpdateEntry_Credential_Success_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	entryID := createTestEntry(t, r, token)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "credential",
+		"name":       "Updated Website",
+		"data": map[string]string{
+			"login":    "newlogin",
+			"password": "newpassword",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+entryID.String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp updateEntryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, entryID, resp.ID)
+	assert.NotEmpty(t, resp.UpdatedAt)
+}
+
+func TestUpdateEntry_TypeMismatch_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	entryID := createTestEntry(t, r, token)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "text",
+		"name":       "Changed Type",
+		"data": map[string]string{
+			"content": "some text",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+entryID.String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateEntry_NotFound_404(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "credential",
+		"name":       "Nonexistent",
+		"data": map[string]string{
+			"login":    "user",
+			"password": "pass",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+uuid.New().String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestUpdateEntry_Unauthorized_401(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+
+	reqBody := map[string]interface{}{
+		"entry_type": "credential",
+		"name":       "Test",
+		"data": map[string]string{
+			"login":    "user",
+			"password": "pass",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+uuid.New().String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestUpdateEntry_VerifyDataChanged_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	entryID := createTestEntry(t, r, token)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "credential",
+		"name":       "Updated Entry",
+		"data": map[string]string{
+			"login":    "changedlogin",
+			"password": "changedpass",
+		},
+	}
+	body, _ := json.Marshal(reqBody)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+entryID.String(), bytes.NewReader(body))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+token)
+	uw := httptest.NewRecorder()
+	r.ServeHTTP(uw, updateReq)
+	require.Equal(t, http.StatusOK, uw.Code)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+entryID.String(), nil)
+	getReq.Header.Set("Authorization", "Bearer "+token)
+	gw := httptest.NewRecorder()
+	r.ServeHTTP(gw, getReq)
+	require.Equal(t, http.StatusOK, gw.Code)
+
+	var resp entryResponse
+	require.NoError(t, json.Unmarshal(gw.Body.Bytes(), &resp))
+	assert.Equal(t, "Updated Entry", resp.Name)
+
+	data, ok := resp.Data.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "changedlogin", data["login"])
+	assert.Equal(t, "changedpass", data["password"])
+}
+
+func TestDeleteEntry_Success_204(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	entryID := createTestEntry(t, r, token)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/entries/"+entryID.String(), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestDeleteEntry_NotFound_404(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/entries/"+uuid.New().String(), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestDeleteEntry_Unauthorized_401(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/entries/"+uuid.New().String(), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestDeleteEntry_ThenGet_404(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	entryID := createTestEntry(t, r, token)
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/entries/"+entryID.String(), nil)
+	delReq.Header.Set("Authorization", "Bearer "+token)
+	dw := httptest.NewRecorder()
+	r.ServeHTTP(dw, delReq)
+	require.Equal(t, http.StatusNoContent, dw.Code)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+entryID.String(), nil)
+	getReq.Header.Set("Authorization", "Bearer "+token)
+	gw := httptest.NewRecorder()
+	r.ServeHTTP(gw, getReq)
+
+	assert.Equal(t, http.StatusNotFound, gw.Code)
 }
