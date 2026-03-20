@@ -9,4 +9,5 @@ var (
 	ErrNotFound           = errors.New("entry not found")
 	ErrAccessDenied       = errors.New("access denied")
 	ErrPayloadTooLarge    = errors.New("payload too large")
+	ErrTypeMismatch       = errors.New("entry type mismatch")
 )

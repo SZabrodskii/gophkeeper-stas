@@ -53,10 +53,19 @@ func (m *mockEntryRepo) ListByUserID(_ context.Context, userID uuid.UUID) ([]mod
 }
 
 func (m *mockEntryRepo) Update(_ context.Context, entry *model.Entry) error {
+	if _, ok := m.entries[entry.ID]; !ok {
+		return repository.ErrNotFound
+	}
+	entry.UpdatedAt = time.Now()
+	m.entries[entry.ID] = entry
 	return nil
 }
 
 func (m *mockEntryRepo) Delete(_ context.Context, id uuid.UUID) error {
+	if _, ok := m.entries[id]; !ok {
+		return repository.ErrNotFound
+	}
+	delete(m.entries, id)
 	return nil
 }
 
@@ -717,4 +726,203 @@ func TestEntryService_GetByID_Binary_Success(t *testing.T) {
 	assert.Equal(t, entry.ID, result.ID)
 	assert.Equal(t, b64Data, result.Binary.Data)
 	assert.Equal(t, "roundtrip.bin", result.Binary.OriginalFilename)
+}
+
+func TestEntryService_Update_Credential_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	original := createEncryptedEntry(t, repo, svc, userID)
+
+	updated := &model.Entry{
+		EntryType: model.EntryTypeCredential,
+		Name:      "Updated Website",
+		Credential: &model.CredentialData{
+			Login:    "newlogin",
+			Password: "newpassword",
+		},
+	}
+
+	err := svc.Update(context.Background(), original.ID, userID, updated)
+	require.NoError(t, err)
+
+	assert.Equal(t, original.ID, updated.ID)
+	assert.Equal(t, userID, updated.UserID)
+
+	result, err := svc.GetByID(context.Background(), original.ID, userID)
+	require.NoError(t, err)
+	assert.Equal(t, "Updated Website", result.Name)
+	assert.Equal(t, "newlogin", result.Credential.Login)
+	assert.Equal(t, "newpassword", result.Credential.Password)
+}
+
+func TestEntryService_Update_Text_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	entry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeText,
+		Name:      "Original Note",
+		Text:      &model.TextData{Content: "original content"},
+	}
+	require.NoError(t, svc.Create(context.Background(), entry))
+
+	updated := &model.Entry{
+		EntryType: model.EntryTypeText,
+		Name:      "Updated Note",
+		Text:      &model.TextData{Content: "updated content"},
+	}
+
+	err := svc.Update(context.Background(), entry.ID, userID, updated)
+	require.NoError(t, err)
+
+	result, err := svc.GetByID(context.Background(), entry.ID, userID)
+	require.NoError(t, err)
+	assert.Equal(t, "Updated Note", result.Name)
+	assert.Equal(t, "updated content", result.Text.Content)
+}
+
+func TestEntryService_Update_NotFound(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	updated := &model.Entry{
+		EntryType: model.EntryTypeCredential,
+		Name:      "Test",
+		Credential: &model.CredentialData{
+			Login:    "user",
+			Password: "pass",
+		},
+	}
+
+	err := svc.Update(context.Background(), uuid.New(), uuid.New(), updated)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestEntryService_Update_WrongUser(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	ownerID := uuid.New()
+	otherID := uuid.New()
+
+	original := createEncryptedEntry(t, repo, svc, ownerID)
+
+	updated := &model.Entry{
+		EntryType: model.EntryTypeCredential,
+		Name:      "Hacked",
+		Credential: &model.CredentialData{
+			Login:    "hacker",
+			Password: "hacked",
+		},
+	}
+
+	err := svc.Update(context.Background(), original.ID, otherID, updated)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestEntryService_Update_TypeMismatch(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	original := createEncryptedEntry(t, repo, svc, userID)
+
+	updated := &model.Entry{
+		EntryType: model.EntryTypeText,
+		Name:      "Changed Type",
+		Text:      &model.TextData{Content: "some text"},
+	}
+
+	err := svc.Update(context.Background(), original.ID, userID, updated)
+	assert.ErrorIs(t, err, ErrTypeMismatch)
+}
+
+func TestEntryService_Update_EmptyName(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	original := createEncryptedEntry(t, repo, svc, userID)
+
+	updated := &model.Entry{
+		EntryType: model.EntryTypeCredential,
+		Name:      "",
+		Credential: &model.CredentialData{
+			Login:    "user",
+			Password: "pass",
+		},
+	}
+
+	err := svc.Update(context.Background(), original.ID, userID, updated)
+	assert.ErrorIs(t, err, ErrValidation)
+}
+
+func TestEntryService_Update_VerifyReEncryption(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	original := createEncryptedEntry(t, repo, svc, userID)
+	oldEncLogin := make([]byte, len(original.Credential.EncryptedLogin))
+	copy(oldEncLogin, original.Credential.EncryptedLogin)
+
+	updated := &model.Entry{
+		EntryType: model.EntryTypeCredential,
+		Name:      "Re-encrypted",
+		Credential: &model.CredentialData{
+			Login:    "newlogin",
+			Password: "newpassword",
+		},
+	}
+
+	err := svc.Update(context.Background(), original.ID, userID, updated)
+	require.NoError(t, err)
+
+	stored := repo.entries[original.ID]
+	assert.NotEmpty(t, stored.Credential.EncryptedLogin)
+	assert.NotEqual(t, oldEncLogin, stored.Credential.EncryptedLogin)
+
+	decLogin, err := crypto.Decrypt([]byte(testEncryptionKey), stored.Credential.EncryptedLogin)
+	require.NoError(t, err)
+	assert.Equal(t, "newlogin", string(decLogin))
+}
+
+func TestEntryService_Delete_Success(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	entry := createEncryptedEntry(t, repo, svc, userID)
+
+	err := svc.Delete(context.Background(), entry.ID, userID)
+	require.NoError(t, err)
+
+	_, err = svc.GetByID(context.Background(), entry.ID, userID)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestEntryService_Delete_NotFound(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+
+	err := svc.Delete(context.Background(), uuid.New(), uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestEntryService_Delete_WrongUser(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	ownerID := uuid.New()
+	otherID := uuid.New()
+
+	entry := createEncryptedEntry(t, repo, svc, ownerID)
+
+	err := svc.Delete(context.Background(), entry.ID, otherID)
+	assert.ErrorIs(t, err, ErrNotFound)
+
+	_, err = svc.GetByID(context.Background(), entry.ID, ownerID)
+	assert.NoError(t, err)
 }

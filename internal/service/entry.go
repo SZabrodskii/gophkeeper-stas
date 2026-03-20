@@ -87,33 +87,6 @@ func (s *EntryService) Create(ctx context.Context, entry *model.Entry) error {
 	return nil
 }
 
-func (s *EntryService) encryptCredential(entry *model.Entry) error {
-	if entry.Credential == nil {
-		return fmt.Errorf("%w: credential data is required", ErrValidation)
-	}
-	if entry.Credential.Login == "" {
-		return fmt.Errorf("%w: login is required for credential entry", ErrValidation)
-	}
-	if entry.Credential.Password == "" {
-		return fmt.Errorf("%w: password is required for credential entry", ErrValidation)
-	}
-
-	encLogin, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Credential.Login))
-	if err != nil {
-		return fmt.Errorf("encrypt login: %w", err)
-	}
-	encPassword, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Credential.Password))
-	if err != nil {
-		return fmt.Errorf("encrypt password: %w", err)
-	}
-
-	entry.Credential.EncryptedLogin = encLogin
-	entry.Credential.EncryptedPassword = encPassword
-	entry.Credential.EntryID = entry.ID
-
-	return nil
-}
-
 func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*model.Entry, error) {
 	entry, err := s.entryRepo.GetByID(ctx, id)
 	if err != nil {
@@ -149,6 +122,83 @@ func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UU
 	return entry, nil
 }
 
+func (s *EntryService) Update(ctx context.Context, id, userID uuid.UUID, entry *model.Entry) error {
+	if entry.Name == "" {
+		return fmt.Errorf("%w: name is required", ErrValidation)
+	}
+	existing, err := s.entryRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get entry: %w", err)
+	}
+
+	if existing.EntryType != entry.EntryType {
+		return fmt.Errorf("%w: current entry type cannot be updated", ErrTypeMismatch)
+	}
+
+	if existing.UserID != userID {
+		return ErrNotFound
+	}
+
+	entry.ID = id
+
+	switch entry.EntryType {
+	case model.EntryTypeCredential:
+		if err := s.encryptCredential(entry); err != nil {
+			return err
+		}
+	case model.EntryTypeText:
+		if err := s.encryptText(entry); err != nil {
+			return err
+		}
+	case model.EntryTypeCard:
+		if err := s.encryptCard(entry); err != nil {
+			return err
+		}
+	case model.EntryTypeBinary:
+		if err := s.encryptBinary(entry); err != nil {
+			return err
+		}
+	}
+
+	entry.UserID = userID
+	entry.EntryType = existing.EntryType
+
+	if err := s.entryRepo.Update(ctx, entry); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("update entry: %w", err)
+	}
+
+	return nil
+}
+
+func (s *EntryService) Delete(ctx context.Context, id, userID uuid.UUID) error {
+	entry, err := s.entryRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get entry: %w", err)
+	}
+
+	if entry.UserID != userID {
+		return ErrNotFound
+	}
+
+	if err := s.entryRepo.Delete(ctx, id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("delete entry: %w", err)
+	}
+
+	return nil
+}
+
 func (s *EntryService) ListByUserID(ctx context.Context, userID uuid.UUID) ([]model.Entry, error) {
 	result, err := s.entryRepo.ListByUserID(ctx, userID)
 	if err != nil {
@@ -156,6 +206,58 @@ func (s *EntryService) ListByUserID(ctx context.Context, userID uuid.UUID) ([]mo
 	}
 
 	return result, nil
+}
+
+func (s *EntryService) encryptCredential(entry *model.Entry) error {
+	if entry.Credential == nil {
+		return fmt.Errorf("%w: credential data is required", ErrValidation)
+	}
+	if entry.Credential.Login == "" {
+		return fmt.Errorf("%w: login is required for credential entry", ErrValidation)
+	}
+	if entry.Credential.Password == "" {
+		return fmt.Errorf("%w: password is required for credential entry", ErrValidation)
+	}
+
+	encLogin, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Credential.Login))
+	if err != nil {
+		return fmt.Errorf("encrypt login: %w", err)
+	}
+	encPassword, err := crypto.Encrypt(s.encryptionKey, []byte(entry.Credential.Password))
+	if err != nil {
+		return fmt.Errorf("encrypt password: %w", err)
+	}
+
+	entry.Credential.EncryptedLogin = encLogin
+	entry.Credential.EncryptedPassword = encPassword
+	entry.Credential.EntryID = entry.ID
+
+	return nil
+}
+
+func (s *EntryService) decryptCredential(entry *model.Entry) error {
+	if entry.Credential == nil {
+		return nil
+	}
+
+	if len(entry.Credential.EncryptedLogin) > 0 {
+		login, err := crypto.Decrypt(s.encryptionKey, entry.Credential.EncryptedLogin)
+		if err != nil {
+			return fmt.Errorf("decrypt login: %w", err)
+		}
+		entry.Credential.Login = string(login)
+	}
+
+	if len(entry.Credential.EncryptedPassword) > 0 {
+		pass, err := crypto.Decrypt(s.encryptionKey, entry.Credential.EncryptedPassword)
+		if err != nil {
+			return fmt.Errorf("decrypt password: %w", err)
+		}
+		entry.Credential.Password = string(pass)
+	}
+
+	return nil
+
 }
 
 func (s *EntryService) encryptText(entry *model.Entry) error {
@@ -274,31 +376,6 @@ func (s *EntryService) decryptCard(entry *model.Entry) error {
 	}
 
 	return nil
-}
-
-func (s *EntryService) decryptCredential(entry *model.Entry) error {
-	if entry.Credential == nil {
-		return nil
-	}
-
-	if len(entry.Credential.EncryptedLogin) > 0 {
-		login, err := crypto.Decrypt(s.encryptionKey, entry.Credential.EncryptedLogin)
-		if err != nil {
-			return fmt.Errorf("decrypt login: %w", err)
-		}
-		entry.Credential.Login = string(login)
-	}
-
-	if len(entry.Credential.EncryptedPassword) > 0 {
-		pass, err := crypto.Decrypt(s.encryptionKey, entry.Credential.EncryptedPassword)
-		if err != nil {
-			return fmt.Errorf("decrypt password: %w", err)
-		}
-		entry.Credential.Password = string(pass)
-	}
-
-	return nil
-
 }
 
 func (s *EntryService) encryptBinary(entry *model.Entry) error {

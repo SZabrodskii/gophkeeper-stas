@@ -254,11 +254,87 @@ func (r *PostgresEntryRepository) ListByUserID(ctx context.Context, userID uuid.
 }
 
 func (r *PostgresEntryRepository) Update(ctx context.Context, entry *model.Entry) error {
-	return fmt.Errorf("todo")
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var metadataByte []byte
+	if entry.Metadata != nil {
+		metadataByte = []byte(*entry.Metadata)
+	}
+	entry.UpdatedAt = time.Now()
+
+	query := `UPDATE entries SET name = $1, metadata = $2, updated_at = $3 WHERE id = $4`
+	res, err := tx.ExecContext(ctx, query, entry.Name, metadataByte, entry.UpdatedAt, entry.ID)
+	if err != nil {
+		return fmt.Errorf("update entry: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	switch entry.EntryType {
+	case model.EntryTypeCredential:
+		if entry.Credential == nil {
+			return fmt.Errorf("credential data is required for credential entry type")
+		}
+		q := `UPDATE credential_data SET encrypted_login = $1, encrypted_password = $2 WHERE entry_id = $3`
+		_, err = tx.ExecContext(ctx, q, entry.Credential.EncryptedLogin, entry.Credential.EncryptedPassword, entry.ID)
+	case model.EntryTypeText:
+		if entry.Text == nil {
+			return fmt.Errorf("text data is required for text entry type")
+		}
+		q := `UPDATE text_data SET encrypted_content = $1 WHERE entry_id = $2`
+		_, err = tx.ExecContext(ctx, q, entry.Text.EncryptedContent, entry.ID)
+	case model.EntryTypeCard:
+		if entry.Card == nil {
+			return fmt.Errorf("card data is required for card entry type")
+		}
+		q := `UPDATE card_data SET encrypted_number = $1, encrypted_expiry = $2, encrypted_holder_name = $3, encrypted_cvv = $4 WHERE entry_id = $5`
+		_, err = tx.ExecContext(ctx, q, entry.Card.EncryptedNumber, entry.Card.EncryptedExpiry, entry.Card.EncryptedHolderName, entry.Card.EncryptedCVV, entry.ID)
+	case model.EntryTypeBinary:
+		if entry.Binary == nil {
+			return fmt.Errorf("binary data is required for binary entry type")
+		}
+		q := `UPDATE binary_data SET encrypted_data = $1, original_filename = $2 WHERE entry_id = $3`
+		_, err = tx.ExecContext(ctx, q, entry.Binary.EncryptedData, entry.Binary.OriginalFilename, entry.ID)
+	default:
+		return fmt.Errorf("unsupported entry type: %s", entry.EntryType)
+	}
+
+	if err != nil {
+		return fmt.Errorf("update entry: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	return nil
+
 }
 
 func (r *PostgresEntryRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return fmt.Errorf("todo")
+	query := `DELETE FROM entries WHERE id = $1`
+	res, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("delete entry: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 func (r *PostgresEntryRepository) ListUpdatedAfter(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.Entry, error) {

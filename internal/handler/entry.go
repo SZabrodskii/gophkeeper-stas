@@ -23,6 +23,8 @@ type entryHandlerRoutes struct {
 	CreateEntry httpbara.Route `route:"POST /entries" group:"v1"`
 	ListEntries httpbara.Route `route:"GET /entries" group:"v1"`
 	GetEntry    httpbara.Route `route:"GET /entries/:id" group:"v1"`
+	UpdateEntry httpbara.Route `route:"PUT /entries/:id" group:"v1"`
+	DeleteEntry httpbara.Route `route:"DELETE /entries/:id" group:"v1"`
 }
 
 type EntryHandler struct {
@@ -46,6 +48,11 @@ type createEntryRequest struct {
 type createEntryResponse struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt string    `json:"created_at"`
+}
+
+type updateEntryResponse struct {
+	ID        uuid.UUID `json:"id"`
+	UpdatedAt string    `json:"updated_at"`
 }
 
 func NewEntryHandler(params entryHandlerParams) (FxHandler, error) {
@@ -254,4 +261,126 @@ func (h *EntryHandler) GetEntry(c *gin.Context) {
 
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *EntryHandler) UpdateEntry(c *gin.Context) {
+	userIDVal, exists := c.Get(UserIDKey)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var req createEntryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid entry id"})
+		return
+	}
+
+	entry := &model.Entry{
+		UserID:    userID,
+		EntryType: req.EntryType,
+		Name:      req.Name,
+		Metadata:  req.Metadata,
+	}
+
+	switch req.EntryType {
+	case model.EntryTypeCredential:
+		var cred model.CredentialData
+		if err := json.Unmarshal(req.Data, &cred); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid credential data"})
+			return
+		}
+		entry.Credential = &cred
+	case model.EntryTypeText:
+		var text model.TextData
+		if err := json.Unmarshal(req.Data, &text); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid text data"})
+			return
+		}
+		entry.Text = &text
+	case model.EntryTypeCard:
+		var card model.CardData
+		if err := json.Unmarshal(req.Data, &card); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid card data"})
+			return
+		}
+		entry.Card = &card
+	case model.EntryTypeBinary:
+		var binary model.BinaryData
+		if err := json.Unmarshal(req.Data, &binary); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid binary data"})
+			return
+		}
+		entry.Binary = &binary
+	}
+
+	if err := h.entryService.Update(c.Request.Context(), id, userID, entry); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "entry not found"})
+			return
+		}
+		if errors.Is(err, service.ErrTypeMismatch) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "entry type mismatch"})
+			return
+		}
+		if errors.Is(err, service.ErrValidation) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, service.ErrPayloadTooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, updateEntryResponse{
+		ID:        entry.ID,
+		UpdatedAt: entry.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+func (h *EntryHandler) DeleteEntry(ctx *gin.Context) {
+	userIDVal, exists := ctx.Get(UserIDKey)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid entry id"})
+		return
+	}
+
+	if err := h.entryService.Delete(ctx.Request.Context(), id, userID); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "entry not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
 }
