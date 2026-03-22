@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ type entryHandlerRoutes struct {
 	GetEntry    httpbara.Route `route:"GET /entries/:id" group:"v1"`
 	UpdateEntry httpbara.Route `route:"PUT /entries/:id" group:"v1"`
 	DeleteEntry httpbara.Route `route:"DELETE /entries/:id" group:"v1"`
+	SyncEntries httpbara.Route `route:"GET /sync" group:"v1"`
 }
 
 type EntryHandler struct {
@@ -36,6 +38,11 @@ type entryHandlerParams struct {
 	fx.In
 
 	EntryService *service.EntryService
+}
+
+type syncResponse struct {
+	Entries    []entryResponse `json:"entries"`
+	ServerTime string          `json:"server_time"`
 }
 
 type createEntryRequest struct {
@@ -383,4 +390,87 @@ func (h *EntryHandler) DeleteEntry(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusNoContent)
+}
+
+func (h *EntryHandler) SyncEntries(c *gin.Context) {
+	userIDVal, exists := c.Get(UserIDKey)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	sinceStr := c.Query("since")
+	if sinceStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "empty since time"})
+		return
+	}
+
+	since, err := time.Parse(time.RFC3339, sinceStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid since time"})
+		return
+	}
+
+	entries, serverTime, err := h.entryService.Sync(c.Request.Context(), userID, since)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "entry not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	resp := make([]entryResponse, 0, len(entries))
+	for _, entry := range entries {
+		r := entryResponse{
+			ID:        entry.ID,
+			EntryType: entry.EntryType,
+			Name:      entry.Name,
+			Metadata:  entry.Metadata,
+			CreatedAt: entry.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt: entry.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		}
+		switch entry.EntryType {
+		case model.EntryTypeCredential:
+			if entry.Credential != nil {
+				r.Data = map[string]string{
+					"login":    entry.Credential.Login,
+					"password": entry.Credential.Password,
+				}
+			}
+		case model.EntryTypeText:
+			if entry.Text != nil {
+				r.Data = map[string]string{
+					"content": entry.Text.Content,
+				}
+			}
+		case model.EntryTypeCard:
+			if entry.Card != nil {
+				r.Data = map[string]string{
+					"number":      entry.Card.Number,
+					"expiry":      entry.Card.Expiry,
+					"holder_name": entry.Card.HolderName,
+					"cvv":         entry.Card.CVV,
+				}
+			}
+		case model.EntryTypeBinary:
+			if entry.Binary != nil {
+				r.Data = map[string]string{
+					"data":              entry.Binary.Data,
+					"original_filename": entry.Binary.OriginalFilename,
+				}
+			}
+
+		}
+		resp = append(resp, r)
+	}
+	c.JSON(http.StatusOK, syncResponse{
+		Entries:    resp,
+		ServerTime: serverTime.Format(time.RFC3339),
+	})
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/fx"
@@ -424,4 +425,35 @@ func (s *EntryService) decryptBinary(entry *model.Entry) error {
 	}
 
 	return nil
+}
+
+func (s *EntryService) Sync(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.Entry, time.Time, error) {
+	serverTime := time.Now()
+	entries, err := s.entryRepo.ListUpdatedAfter(ctx, userID, since)
+	if err != nil {
+		return nil, serverTime, fmt.Errorf("list updated entries: %w", err)
+	}
+
+	for i := range entries {
+		switch entries[i].EntryType {
+		case model.EntryTypeCredential:
+			if err := s.decryptCredential(&entries[i]); err != nil {
+				return nil, serverTime, err
+			}
+		case model.EntryTypeText:
+			if err := s.decryptText(&entries[i]); err != nil {
+				return nil, serverTime, fmt.Errorf("decrypt text: %w", err)
+			}
+		case model.EntryTypeCard:
+			if err := s.decryptCard(&entries[i]); err != nil {
+				return nil, serverTime, fmt.Errorf("decrypt card: %w", err)
+			}
+		case model.EntryTypeBinary:
+			if err := s.decryptBinary(&entries[i]); err != nil {
+				return nil, serverTime, fmt.Errorf("decrypt binary: %w", err)
+			}
+		}
+
+	}
+	return entries, serverTime, nil
 }
