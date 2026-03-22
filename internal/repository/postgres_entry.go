@@ -338,5 +338,57 @@ func (r *PostgresEntryRepository) Delete(ctx context.Context, id uuid.UUID) erro
 }
 
 func (r *PostgresEntryRepository) ListUpdatedAfter(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.Entry, error) {
-	return nil, fmt.Errorf("todo")
+	query := `SELECT id, user_id, entry_type, name, metadata, created_at, updated_at
+		FROM entries WHERE user_id = $1 AND updated_at > $2 ORDER BY updated_at ASC`
+
+	rows, err := r.db.QueryContext(ctx, query, userID, since)
+	if err != nil {
+		return nil, fmt.Errorf("list entries: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []model.Entry
+	for rows.Next() {
+		var entry model.Entry
+		var metadataBytes []byte
+		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.EntryType, &entry.Name,
+			&metadataBytes, &entry.CreatedAt, &entry.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan entry: %w", err)
+		}
+		if metadataBytes != nil {
+			raw := json.RawMessage(metadataBytes)
+			entry.Metadata = &raw
+		}
+
+		switch entry.EntryType {
+		case model.EntryTypeCredential:
+			cred, err := r.getCredentialData(ctx, entry.ID)
+			if err != nil {
+				return nil, fmt.Errorf("get credential data: %w", err)
+			}
+			entry.Credential = cred
+		case model.EntryTypeText:
+			text, err := r.getTextData(ctx, entry.ID)
+			if err != nil {
+				return nil, fmt.Errorf("get text data: %w", err)
+			}
+			entry.Text = text
+		case model.EntryTypeCard:
+			card, err := r.getCardData(ctx, entry.ID)
+			if err != nil {
+				return nil, fmt.Errorf("get card data: %w", err)
+			}
+			entry.Card = card
+		case model.EntryTypeBinary:
+			binary, err := r.getBinaryData(ctx, entry.ID)
+			if err != nil {
+				return nil, fmt.Errorf("get binary data: %w", err)
+			}
+			entry.Binary = binary
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, rows.Err()
+
 }
