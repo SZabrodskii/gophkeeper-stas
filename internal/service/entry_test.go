@@ -70,7 +70,13 @@ func (m *mockEntryRepo) Delete(_ context.Context, id uuid.UUID) error {
 }
 
 func (m *mockEntryRepo) ListUpdatedAfter(_ context.Context, userID uuid.UUID, since time.Time) ([]model.Entry, error) {
-	return nil, nil
+	var result []model.Entry
+	for _, e := range m.entries {
+		if e.UserID == userID && e.UpdatedAt.After(since) {
+			result = append(result, *e)
+		}
+	}
+	return result, nil
 }
 
 func newTestEntryService(repo *mockEntryRepo) *EntryService {
@@ -925,4 +931,125 @@ func TestEntryService_Delete_WrongUser(t *testing.T) {
 
 	_, err = svc.GetByID(context.Background(), entry.ID, ownerID)
 	assert.NoError(t, err)
+}
+
+func TestEntryService_Sync_ReturnsEntriesAfterTimestamp(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	since := time.Now().Add(-time.Hour)
+
+	createEncryptedEntry(t, repo, svc, userID)
+
+	entries, serverTime, err := svc.Sync(context.Background(), userID, since)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.False(t, serverTime.IsZero())
+	assert.Equal(t, "mylogin", entries[0].Credential.Login)
+	assert.Equal(t, "mypassword", entries[0].Credential.Password)
+}
+
+func TestEntryService_Sync_ReturnsEmptyWhenNoChanges(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	createEncryptedEntry(t, repo, svc, userID)
+
+	since := time.Now().Add(time.Hour)
+	entries, serverTime, err := svc.Sync(context.Background(), userID, since)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+	assert.False(t, serverTime.IsZero())
+}
+
+func TestEntryService_Sync_DecryptsAllTypes(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	since := time.Now().Add(-time.Hour)
+
+	// credential
+	createEncryptedEntry(t, repo, svc, userID)
+
+	// text
+	textEntry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeText,
+		Name:      "Note",
+		Text:      &model.TextData{Content: "secret note"},
+	}
+	require.NoError(t, svc.Create(context.Background(), textEntry))
+
+	// card
+	cardEntry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeCard,
+		Name:      "Card",
+		Card: &model.CardData{
+			Number:     "4532015112830366",
+			Expiry:     "12/25",
+			HolderName: "John Doe",
+			CVV:        "123",
+		},
+	}
+	require.NoError(t, svc.Create(context.Background(), cardEntry))
+
+	// binary
+	rawData := []byte("binary content")
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+	binaryEntry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeBinary,
+		Name:      "File",
+		Binary: &model.BinaryData{
+			Data:             b64Data,
+			OriginalFilename: "file.bin",
+		},
+	}
+	require.NoError(t, svc.Create(context.Background(), binaryEntry))
+
+	entries, _, err := svc.Sync(context.Background(), userID, since)
+	require.NoError(t, err)
+	assert.Len(t, entries, 4)
+
+	typeCount := map[model.EntryType]int{}
+	for _, e := range entries {
+		typeCount[e.EntryType]++
+		switch e.EntryType {
+		case model.EntryTypeCredential:
+			assert.Equal(t, "mylogin", e.Credential.Login)
+			assert.Equal(t, "mypassword", e.Credential.Password)
+		case model.EntryTypeText:
+			assert.Equal(t, "secret note", e.Text.Content)
+		case model.EntryTypeCard:
+			assert.Equal(t, "4532015112830366", e.Card.Number)
+			assert.Equal(t, "12/25", e.Card.Expiry)
+			assert.Equal(t, "John Doe", e.Card.HolderName)
+			assert.Equal(t, "123", e.Card.CVV)
+		case model.EntryTypeBinary:
+			assert.Equal(t, b64Data, e.Binary.Data)
+			assert.Equal(t, "file.bin", e.Binary.OriginalFilename)
+		}
+	}
+	assert.Equal(t, 1, typeCount[model.EntryTypeCredential])
+	assert.Equal(t, 1, typeCount[model.EntryTypeText])
+	assert.Equal(t, 1, typeCount[model.EntryTypeCard])
+	assert.Equal(t, 1, typeCount[model.EntryTypeBinary])
+}
+
+func TestEntryService_Sync_ReturnsServerTime(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	before := time.Now()
+	_, serverTime, err := svc.Sync(context.Background(), userID, time.Time{})
+	require.NoError(t, err)
+	after := time.Now()
+
+	assert.True(t, !serverTime.Before(before), "serverTime should be >= before")
+	assert.True(t, !serverTime.After(after), "serverTime should be <= after")
 }

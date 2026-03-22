@@ -74,7 +74,13 @@ func (m *mockEntryRepo) Delete(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 func (m *mockEntryRepo) ListUpdatedAfter(_ context.Context, userID uuid.UUID, since time.Time) ([]model.Entry, error) {
-	return nil, nil
+	var result []model.Entry
+	for _, e := range m.entries {
+		if e.UserID == userID && e.UpdatedAt.After(since) {
+			result = append(result, *e)
+		}
+	}
+	return result, nil
 }
 
 func setupEntryRouter() (*gin.Engine, *service.EntryService, *service.AuthService) {
@@ -911,4 +917,108 @@ func TestDeleteEntry_ThenGet_404(t *testing.T) {
 	r.ServeHTTP(gw, getReq)
 
 	assert.Equal(t, http.StatusNotFound, gw.Code)
+}
+
+func TestSyncEntries_Success_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	since := time.Now().Add(-time.Hour).Format(time.RFC3339)
+
+	createTestEntry(t, r, token)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp syncResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Len(t, resp.Entries, 1)
+	assert.NotEmpty(t, resp.ServerTime)
+
+	assert.Equal(t, "Test Entry", resp.Entries[0].Name)
+	assert.Equal(t, model.EntryTypeCredential, resp.Entries[0].EntryType)
+	assert.NotNil(t, resp.Entries[0].Data)
+}
+
+func TestSyncEntries_Empty_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	since := time.Now().Add(time.Hour).Format(time.RFC3339)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp syncResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Empty(t, resp.Entries)
+	assert.NotEmpty(t, resp.ServerTime)
+}
+
+func TestSyncEntries_MissingSince_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSyncEntries_InvalidSince_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since=not-a-date", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSyncEntries_Unauthorized_401(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+
+	since := time.Now().Add(-time.Hour).Format(time.RFC3339)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestSyncEntries_VerifyServerTime_200(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	before := time.Now()
+	since := time.Now().Add(-time.Hour).Format(time.RFC3339)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	after := time.Now()
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp syncResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	serverTime, err := time.Parse(time.RFC3339, resp.ServerTime)
+	require.NoError(t, err)
+	assert.True(t, !serverTime.Before(before.Truncate(time.Second)))
+	assert.True(t, !serverTime.After(after.Add(time.Second)))
 }
