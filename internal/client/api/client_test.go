@@ -15,7 +15,6 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/config"
 )
 
-// newTestClient создаёт HTTPClient, подключённый к httptest.Server.
 func newTestClient(t *testing.T, handler http.Handler) (*HTTPClient, *httptest.Server) {
 	t.Helper()
 	srv := httptest.NewTLSServer(handler)
@@ -25,7 +24,6 @@ func newTestClient(t *testing.T, handler http.Handler) (*HTTPClient, *httptest.S
 		ServerAddress: srv.URL,
 		TLSInsecure:   true,
 	})
-	// Используем TLS-клиент тестового сервера.
 	client.httpClient = srv.Client()
 	return client, srv
 }

@@ -72,7 +72,6 @@ func setupRouter() (*gin.Engine, *service.AuthService, *mockUserRepo) {
 	return r, authSvc, repo
 }
 
-// setupProtectedRouter creates a router with auth handler + a protected test endpoint.
 func setupProtectedRouter() (*gin.Engine, *service.AuthService, *mockUserRepo) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockUserRepo()
@@ -89,7 +88,6 @@ func setupProtectedRouter() (*gin.Engine, *service.AuthService, *mockUserRepo) {
 		panic(err)
 	}
 
-	// Add a test protected endpoint using raw gin (simulates what entry handlers would do).
 	r.GET("/api/v1/protected", func(c *gin.Context) {
 		h.JWTMiddleware(c)
 		if c.IsAborted() {
@@ -101,8 +99,6 @@ func setupProtectedRouter() (*gin.Engine, *service.AuthService, *mockUserRepo) {
 
 	return r, authSvc, repo
 }
-
-// --- Register handler tests ---
 
 func TestRegister_Success_201(t *testing.T) {
 	r, _, _ := setupRouter()
@@ -152,14 +148,12 @@ func TestRegister_Conflict_409(t *testing.T) {
 
 	body, _ := json.Marshal(authRequest{Login: "existing", Password: "password123"})
 
-	// First registration — success.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusCreated, w.Code)
 
-	// Second registration with same login — conflict.
 	body, _ = json.Marshal(authRequest{Login: "existing", Password: "password456"})
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -181,12 +175,9 @@ func TestRegister_InvalidJSON_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-// --- Login handler tests ---
-
 func TestLogin_Success_200(t *testing.T) {
 	r, _, _ := setupRouter()
 
-	// Register a user first.
 	regBody, _ := json.Marshal(authRequest{Login: "loginuser", Password: "password123"})
 	regReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(regBody))
 	regReq.Header.Set("Content-Type", "application/json")
@@ -194,7 +185,6 @@ func TestLogin_Success_200(t *testing.T) {
 	r.ServeHTTP(regW, regReq)
 	require.Equal(t, http.StatusCreated, regW.Code)
 
-	// Login with same credentials.
 	body, _ := json.Marshal(authRequest{Login: "loginuser", Password: "password123"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -213,7 +203,6 @@ func TestLogin_Success_200(t *testing.T) {
 func TestLogin_InvalidCredentials_401(t *testing.T) {
 	r, _, _ := setupRouter()
 
-	// Register a user first.
 	regBody, _ := json.Marshal(authRequest{Login: "loginuser", Password: "password123"})
 	regReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(regBody))
 	regReq.Header.Set("Content-Type", "application/json")
@@ -255,12 +244,9 @@ func TestLogin_InvalidJSON_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-// --- JWT Middleware tests ---
-
 func TestJWTMiddleware_ValidToken(t *testing.T) {
 	r, _, _ := setupProtectedRouter()
 
-	// Register to get a token.
 	regBody, _ := json.Marshal(authRequest{Login: "jwtuser", Password: "password123"})
 	regReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(regBody))
 	regReq.Header.Set("Content-Type", "application/json")
@@ -271,7 +257,6 @@ func TestJWTMiddleware_ValidToken(t *testing.T) {
 	var regResp tokenResponse
 	require.NoError(t, json.Unmarshal(regW.Body.Bytes(), &regResp))
 
-	// Use token to access protected endpoint.
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+regResp.Token)
 	w := httptest.NewRecorder()
@@ -304,7 +289,6 @@ func TestJWTMiddleware_MalformedToken(t *testing.T) {
 func TestJWTMiddleware_ExpiredToken(t *testing.T) {
 	r, authSvc, _ := setupProtectedRouter()
 
-	// Register a user to have one in the repo.
 	regBody, _ := json.Marshal(authRequest{Login: "expuser", Password: "password123"})
 	regReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(regBody))
 	regReq.Header.Set("Content-Type", "application/json")
@@ -312,7 +296,6 @@ func TestJWTMiddleware_ExpiredToken(t *testing.T) {
 	r.ServeHTTP(regW, regReq)
 	require.Equal(t, http.StatusCreated, regW.Code)
 
-	// Create an expired token manually.
 	_ = authSvc // ValidateToken will reject expired tokens
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
 	req.Header.Set("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDAwMDAwMDAsImlhdCI6MTYwMDAwMDAwMCwidXNlcl9pZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMCJ9.invalid")

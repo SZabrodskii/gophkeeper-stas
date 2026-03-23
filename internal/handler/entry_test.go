@@ -423,7 +423,6 @@ func TestGetEntry_Text_Success_200(t *testing.T) {
 	r, _, _ := setupEntryRouter()
 	token := getTestToken(t, r)
 
-	// Create text entry
 	reqBody := map[string]interface{}{
 		"entry_type": "text",
 		"name":       "My Note",
@@ -442,7 +441,6 @@ func TestGetEntry_Text_Success_200(t *testing.T) {
 	var createResp createEntryResponse
 	require.NoError(t, json.Unmarshal(cw.Body.Bytes(), &createResp))
 
-	// Get text entry
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+createResp.ID.String(), nil)
 	getReq.Header.Set("Authorization", "Bearer "+token)
 	gw := httptest.NewRecorder()
@@ -516,7 +514,6 @@ func TestGetEntry_Card_Success_200(t *testing.T) {
 	r, _, _ := setupEntryRouter()
 	token := getTestToken(t, r)
 
-	// Create card entry
 	reqBody := map[string]interface{}{
 		"entry_type": "card",
 		"name":       "My Visa",
@@ -538,7 +535,6 @@ func TestGetEntry_Card_Success_200(t *testing.T) {
 	var createResp createEntryResponse
 	require.NoError(t, json.Unmarshal(cw.Body.Bytes(), &createResp))
 
-	// Get card entry
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+createResp.ID.String(), nil)
 	getReq.Header.Set("Authorization", "Bearer "+token)
 	gw := httptest.NewRecorder()
@@ -661,7 +657,6 @@ func TestGetEntry_Binary_Success_200(t *testing.T) {
 	rawData := []byte("round trip binary via HTTP")
 	b64Data := base64.StdEncoding.EncodeToString(rawData)
 
-	// Create binary entry
 	reqBody := map[string]interface{}{
 		"entry_type": "binary",
 		"name":       "My File",
@@ -681,7 +676,6 @@ func TestGetEntry_Binary_Success_200(t *testing.T) {
 	var createResp createEntryResponse
 	require.NoError(t, json.Unmarshal(cw.Body.Bytes(), &createResp))
 
-	// Get binary entry
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/entries/"+createResp.ID.String(), nil)
 	getReq.Header.Set("Authorization", "Bearer "+token)
 	gw := httptest.NewRecorder()
@@ -704,7 +698,6 @@ func TestCreateEntry_Binary_TooLarge_413(t *testing.T) {
 	r, _, _ := setupEntryRouterWithMaxBinary(10) // 10 bytes max
 	token := getTestToken(t, r)
 
-	// Create data larger than 10 bytes
 	rawData := []byte(strings.Repeat("x", 11))
 	b64Data := base64.StdEncoding.EncodeToString(rawData)
 
@@ -1021,4 +1014,50 @@ func TestSyncEntries_VerifyServerTime_200(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, !serverTime.Before(before.Truncate(time.Second)))
 	assert.True(t, !serverTime.After(after.Add(time.Second)))
+}
+
+func TestErrorResponseFormat_Consistent(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	errorCases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		token  string
+		code   int
+	}{
+		{"no auth on entries", http.MethodGet, "/api/v1/entries", "", "", http.StatusUnauthorized},
+		{"no auth on entry", http.MethodGet, "/api/v1/entries/" + uuid.New().String(), "", "", http.StatusUnauthorized},
+		{"invalid entry id", http.MethodGet, "/api/v1/entries/not-uuid", "", token, http.StatusBadRequest},
+		{"not found entry", http.MethodGet, "/api/v1/entries/" + uuid.New().String(), "", token, http.StatusNotFound},
+		{"invalid json create", http.MethodPost, "/api/v1/entries", "bad json", token, http.StatusBadRequest},
+		{"invalid type create", http.MethodPost, "/api/v1/entries", `{"entry_type":"invalid","name":"x","data":{}}`, token, http.StatusBadRequest},
+		{"missing since sync", http.MethodGet, "/api/v1/sync", "", token, http.StatusBadRequest},
+		{"bad since sync", http.MethodGet, "/api/v1/sync?since=nope", "", token, http.StatusBadRequest},
+	}
+
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req *http.Request
+			if tc.body != "" {
+				req = httptest.NewRequest(tc.method, tc.path, bytes.NewReader([]byte(tc.body)))
+				req.Header.Set("Content-Type", "application/json")
+			} else {
+				req = httptest.NewRequest(tc.method, tc.path, nil)
+			}
+			if tc.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, tc.code, w.Code)
+
+			var errResp map[string]string
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp), "response must be valid JSON")
+			assert.NotEmpty(t, errResp["error"], "response must have 'error' field")
+		})
+	}
 }
