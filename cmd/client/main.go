@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "github.com/SZabrodskii/gophkeeper-stas/internal/client/commands"
 
 func main() {
-	fmt.Println("gophkeeper client - not yet implemented")
+	commands.Execute()
 }
