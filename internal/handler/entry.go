@@ -46,10 +46,10 @@ type syncResponse struct {
 }
 
 type createEntryRequest struct {
-	EntryType model.EntryType  `json:"entry_type"`
-	Name      string           `json:"name"`
-	Metadata  *json.RawMessage `json:"metadata,omitempty"`
-	Data      json.RawMessage  `json:"data"`
+	EntryType model.EntryType  `json:"entry_type" example:"credential"`
+	Name      string           `json:"name" example:"My Entry"`
+	Metadata  *json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	Data      json.RawMessage  `json:"data" swaggertype:"object"`
 }
 
 type createEntryResponse struct {
@@ -67,6 +67,18 @@ func NewEntryHandler(params entryHandlerParams) (FxHandler, error) {
 	return asFxHandler(httpbara.AsHandler(h))
 }
 
+// @Summary Create a new entry
+// @Tags entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body createEntryRequest true "Entry data (credential, text, card, or binary)"
+// @Success 201 {object} createEntryResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 413 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /entries [post]
 func (h *EntryHandler) CreateEntry(c *gin.Context) {
 	userIDVal, exists := c.Get(UserIDKey)
 	if !exists {
@@ -149,8 +161,8 @@ type entryResponse struct {
 	ID        uuid.UUID        `json:"id"`
 	EntryType model.EntryType  `json:"entry_type"`
 	Name      string           `json:"name"`
-	Metadata  *json.RawMessage `json:"metadata,omitempty"`
-	Data      interface{}      `json:"data,omitempty"`
+	Metadata  *json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	Data      interface{}      `json:"data,omitempty" swaggertype:"object"`
 	CreatedAt string           `json:"created_at"`
 	UpdatedAt string           `json:"updated_at"`
 }
@@ -159,11 +171,19 @@ type entryListItem struct {
 	ID        uuid.UUID        `json:"id"`
 	EntryType model.EntryType  `json:"entry_type"`
 	Name      string           `json:"name"`
-	Metadata  *json.RawMessage `json:"metadata,omitempty"`
+	Metadata  *json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
 	CreatedAt string           `json:"created_at"`
 	UpdatedAt string           `json:"updated_at"`
 }
 
+// @Summary List all entries
+// @Tags entries
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} entryListItem
+// @Failure 401 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /entries [get]
 func (h *EntryHandler) ListEntries(c *gin.Context) {
 	userIDVal, exists := c.Get(UserIDKey)
 	if !exists {
@@ -197,6 +217,17 @@ func (h *EntryHandler) ListEntries(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// @Summary Get entry by ID
+// @Tags entries
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Entry UUID"
+// @Success 200 {object} entryResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /entries/{id} [get]
 func (h *EntryHandler) GetEntry(c *gin.Context) {
 	userIDVal, exists := c.Get(UserIDKey)
 	if !exists {
@@ -270,6 +301,20 @@ func (h *EntryHandler) GetEntry(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// @Summary Update an existing entry
+// @Tags entries
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Entry UUID"
+// @Param request body createEntryRequest true "Updated entry data"
+// @Success 200 {object} updateEntryResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 413 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /entries/{id} [put]
 func (h *EntryHandler) UpdateEntry(c *gin.Context) {
 	userIDVal, exists := c.Get(UserIDKey)
 	if !exists {
@@ -361,6 +406,15 @@ func (h *EntryHandler) UpdateEntry(c *gin.Context) {
 	})
 }
 
+// @Summary Delete an entry
+// @Tags entries
+// @Security BearerAuth
+// @Param id path string true "Entry UUID"
+// @Success 204
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /entries/{id} [delete]
 func (h *EntryHandler) DeleteEntry(ctx *gin.Context) {
 	userIDVal, exists := ctx.Get(UserIDKey)
 	if !exists {
@@ -392,6 +446,16 @@ func (h *EntryHandler) DeleteEntry(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
+// @Summary Sync entries updated after timestamp
+// @Tags sync
+// @Produce json
+// @Security BearerAuth
+// @Param since query string true "RFC3339 timestamp"
+// @Success 200 {object} syncResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /sync [get]
 func (h *EntryHandler) SyncEntries(c *gin.Context) {
 	userIDVal, exists := c.Get(UserIDKey)
 	if !exists {
