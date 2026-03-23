@@ -50,6 +50,16 @@ func NewAuthHandler(params authHandlerParams) (FxHandler, error) {
 	return asFxHandler(httpbara.AsHandler(h))
 }
 
+// @Summary Register a new user
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body authRequest true "Registration credentials"
+// @Success 201 {object} tokenResponse
+// @Failure 400 {object} errorResponse
+// @Failure 409 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req authRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -73,6 +83,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, tokenResponse{Token: token})
 }
 
+// @Summary Authenticate user
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body authRequest true "Login credentials"
+// @Success 200 {object} tokenResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req authRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

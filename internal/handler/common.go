@@ -11,6 +11,10 @@ type FxHandler struct {
 	Handler *httpbara.Handler `group:"handlers"`
 }
 
+type errorResponse struct {
+	Error string `json:"error" example:"error description"`
+}
+
 func asFxHandler(h *httpbara.Handler, err error) (FxHandler, error) {
 	if err != nil {
 		return FxHandler{}, err

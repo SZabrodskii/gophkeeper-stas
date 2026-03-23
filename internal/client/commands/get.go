@@ -9,7 +9,7 @@ import (
 
 var getCmd = &cobra.Command{
 	Use:   "get <id>",
-	Short: "get entry by ID",
+	Short: "Get entry by ID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {

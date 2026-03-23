@@ -570,13 +570,11 @@ func TestEntryService_GetByID_Card_Success(t *testing.T) {
 	assert.Equal(t, "123", result.Card.CVV)
 }
 
-// Verify that decryption uses actual crypto.Decrypt
 func TestEntryService_GetByID_DecryptionVerify(t *testing.T) {
 	repo := newMockEntryRepo()
 	svc := newTestEntryService(repo)
 	userID := uuid.New()
 
-	// Manually create an entry with encrypted data to verify decryption path
 	key := []byte(testEncryptionKey)
 	encLogin, err := crypto.Encrypt(key, []byte("directlogin"))
 	require.NoError(t, err)
@@ -971,10 +969,8 @@ func TestEntryService_Sync_DecryptsAllTypes(t *testing.T) {
 
 	since := time.Now().Add(-time.Hour)
 
-	// credential
 	createEncryptedEntry(t, repo, svc, userID)
 
-	// text
 	textEntry := &model.Entry{
 		UserID:    userID,
 		EntryType: model.EntryTypeText,
@@ -983,7 +979,6 @@ func TestEntryService_Sync_DecryptsAllTypes(t *testing.T) {
 	}
 	require.NoError(t, svc.Create(context.Background(), textEntry))
 
-	// card
 	cardEntry := &model.Entry{
 		UserID:    userID,
 		EntryType: model.EntryTypeCard,
@@ -997,7 +992,6 @@ func TestEntryService_Sync_DecryptsAllTypes(t *testing.T) {
 	}
 	require.NoError(t, svc.Create(context.Background(), cardEntry))
 
-	// binary
 	rawData := []byte("binary content")
 	b64Data := base64.StdEncoding.EncodeToString(rawData)
 	binaryEntry := &model.Entry{
@@ -1038,6 +1032,59 @@ func TestEntryService_Sync_DecryptsAllTypes(t *testing.T) {
 	assert.Equal(t, 1, typeCount[model.EntryTypeText])
 	assert.Equal(t, 1, typeCount[model.EntryTypeCard])
 	assert.Equal(t, 1, typeCount[model.EntryTypeBinary])
+}
+
+func TestEntryService_Sync_LWW_ReturnsLastUpdate(t *testing.T) {
+	repo := newMockEntryRepo()
+	svc := newTestEntryService(repo)
+	userID := uuid.New()
+
+	// Create entry
+	entry := &model.Entry{
+		UserID:    userID,
+		EntryType: model.EntryTypeCredential,
+		Name:      "Original",
+		Credential: &model.CredentialData{
+			Login:    "original_login",
+			Password: "original_pass",
+		},
+	}
+	require.NoError(t, svc.Create(context.Background(), entry))
+	entryID := entry.ID
+
+	// First update
+	time.Sleep(time.Millisecond)
+	update1 := &model.Entry{
+		EntryType: model.EntryTypeCredential,
+		Name:      "First Update",
+		Credential: &model.CredentialData{
+			Login:    "first_login",
+			Password: "first_pass",
+		},
+	}
+	require.NoError(t, svc.Update(context.Background(), entryID, userID, update1))
+
+	time.Sleep(time.Millisecond)
+	since := time.Now()
+	time.Sleep(time.Millisecond)
+
+	update2 := &model.Entry{
+		EntryType: model.EntryTypeCredential,
+		Name:      "Second Update",
+		Credential: &model.CredentialData{
+			Login:    "second_login",
+			Password: "second_pass",
+		},
+	}
+	require.NoError(t, svc.Update(context.Background(), entryID, userID, update2))
+
+	entries, _, err := svc.Sync(context.Background(), userID, since)
+	require.NoError(t, err)
+
+	require.Len(t, entries, 1)
+	assert.Equal(t, "Second Update", entries[0].Name)
+	assert.Equal(t, "second_login", entries[0].Credential.Login)
+	assert.Equal(t, "second_pass", entries[0].Credential.Password)
 }
 
 func TestEntryService_Sync_ReturnsServerTime(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 
 var updateCmd = &cobra.Command{
 	Use:   "update <id>",
-	Short: "Обновить запись",
+	Short: "Update an entry",
 }
 
 var updateCredentialCmd = &cobra.Command{
@@ -28,6 +28,10 @@ var updateCredentialCmd = &cobra.Command{
 		name, _ := cmd.Flags().GetString("name")
 		login, _ := cmd.Flags().GetString("login")
 		password, _ := cmd.Flags().GetString("password")
+		meta, err := parseMetadata(cmd)
+		if err != nil {
+			return err
+		}
 
 		data, _ := json.Marshal(map[string]string{
 			"login":    login,
@@ -37,6 +41,7 @@ var updateCredentialCmd = &cobra.Command{
 		resp, err := app.API.UpdateEntry(cmd.Context(), args[0], api.CreateEntryRequest{
 			EntryType: "credential",
 			Name:      name,
+			Metadata:  meta,
 			Data:      data,
 		})
 		if err != nil {
@@ -59,6 +64,10 @@ var updateTextCmd = &cobra.Command{
 
 		name, _ := cmd.Flags().GetString("name")
 		content, _ := cmd.Flags().GetString("content")
+		meta, err := parseMetadata(cmd)
+		if err != nil {
+			return err
+		}
 
 		data, _ := json.Marshal(map[string]string{
 			"content": content,
@@ -67,6 +76,7 @@ var updateTextCmd = &cobra.Command{
 		resp, err := app.API.UpdateEntry(cmd.Context(), args[0], api.CreateEntryRequest{
 			EntryType: "text",
 			Name:      name,
+			Metadata:  meta,
 			Data:      data,
 		})
 		if err != nil {
@@ -92,6 +102,10 @@ var updateCardCmd = &cobra.Command{
 		expiry, _ := cmd.Flags().GetString("expiry")
 		holder, _ := cmd.Flags().GetString("holder")
 		cvv, _ := cmd.Flags().GetString("cvv")
+		meta, err := parseMetadata(cmd)
+		if err != nil {
+			return err
+		}
 
 		data, _ := json.Marshal(map[string]string{
 			"number":      number,
@@ -103,6 +117,7 @@ var updateCardCmd = &cobra.Command{
 		resp, err := app.API.UpdateEntry(cmd.Context(), args[0], api.CreateEntryRequest{
 			EntryType: "card",
 			Name:      name,
+			Metadata:  meta,
 			Data:      data,
 		})
 		if err != nil {
@@ -116,7 +131,7 @@ var updateCardCmd = &cobra.Command{
 
 var updateBinaryCmd = &cobra.Command{
 	Use:   "binary <id>",
-	Short: "update binary entry",
+	Short: "Update binary entry",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
@@ -125,6 +140,10 @@ var updateBinaryCmd = &cobra.Command{
 
 		name, _ := cmd.Flags().GetString("name")
 		filePath, _ := cmd.Flags().GetString("file")
+		meta, err := parseMetadata(cmd)
+		if err != nil {
+			return err
+		}
 
 		fileData, err := os.ReadFile(filePath)
 		if err != nil {
@@ -139,6 +158,7 @@ var updateBinaryCmd = &cobra.Command{
 		resp, err := app.API.UpdateEntry(cmd.Context(), args[0], api.CreateEntryRequest{
 			EntryType: "binary",
 			Name:      name,
+			Metadata:  meta,
 			Data:      data,
 		})
 		if err != nil {
@@ -157,10 +177,12 @@ func init() {
 	_ = updateCredentialCmd.MarkFlagRequired("name")
 	_ = updateCredentialCmd.MarkFlagRequired("login")
 	_ = updateCredentialCmd.MarkFlagRequired("password")
+	addMetadataFlag(updateCredentialCmd)
 	updateTextCmd.Flags().String("name", "", "entry name")
 	updateTextCmd.Flags().StringP("content", "c", "", "text content")
 	_ = updateTextCmd.MarkFlagRequired("name")
 	_ = updateTextCmd.MarkFlagRequired("content")
+	addMetadataFlag(updateTextCmd)
 	updateCardCmd.Flags().String("name", "", "entry name")
 	updateCardCmd.Flags().String("number", "", "card number")
 	updateCardCmd.Flags().String("expiry", "", "expiry MM/YY")
@@ -171,10 +193,12 @@ func init() {
 	_ = updateCardCmd.MarkFlagRequired("expiry")
 	_ = updateCardCmd.MarkFlagRequired("holder")
 	_ = updateCardCmd.MarkFlagRequired("cvv")
+	addMetadataFlag(updateCardCmd)
 	updateBinaryCmd.Flags().String("name", "", "entry name")
 	updateBinaryCmd.Flags().StringP("file", "f", "", "path to file")
 	_ = updateBinaryCmd.MarkFlagRequired("name")
 	_ = updateBinaryCmd.MarkFlagRequired("file")
+	addMetadataFlag(updateBinaryCmd)
 
 	updateCmd.AddCommand(updateCredentialCmd, updateTextCmd, updateCardCmd, updateBinaryCmd)
 	rootCmd.AddCommand(updateCmd)

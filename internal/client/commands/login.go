@@ -8,7 +8,7 @@ import (
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "authorization of user",
+	Short: "Log in to an existing account",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		login, _ := cmd.Flags().GetString("login")
 		password, _ := cmd.Flags().GetString("password")

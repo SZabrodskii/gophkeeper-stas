@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gopybara/httpbara"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
@@ -47,6 +49,8 @@ func NewRouter(params newRouterParams) (*gin.Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("httpbara engine: %w", err)
 	}
+
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	return r, nil
 }

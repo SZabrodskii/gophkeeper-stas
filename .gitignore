@@ -3,7 +3,20 @@ docs/swagger.json
 docs/swagger.yaml
 docs/docs.go
 .env
+.env.*
 certs/
 *.out
+*.exe
+*.test
+*.prof
+*.log
+vendor/
 specs
+.specify/
+.claude/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.tmp
 

@@ -8,7 +8,7 @@ import (
 
 var deleteCmd = &cobra.Command{
 	Use:   "delete <id>",
-	Short: "delete input",
+	Short: "Delete an entry",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
