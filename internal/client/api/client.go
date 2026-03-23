@@ -50,9 +50,10 @@ type TokenResponse struct {
 }
 
 type CreateEntryRequest struct {
-	EntryType string          `json:"entry_type"`
-	Name      string          `json:"name"`
-	Data      json.RawMessage `json:"data"`
+	EntryType string           `json:"entry_type"`
+	Name      string           `json:"name"`
+	Metadata  *json.RawMessage `json:"metadata,omitempty"`
+	Data      json.RawMessage  `json:"data"`
 }
 
 type CreateEntryResponse struct {
@@ -194,7 +195,13 @@ func (c *HTTPClient) doRequest(ctx context.Context, method, path string, body in
 	if resp.StatusCode >= 400 {
 		var ae apiError
 		if json.Unmarshal(respBody, &ae) == nil && ae.Error != "" {
+			if resp.StatusCode == http.StatusUnauthorized {
+				return fmt.Errorf("server error (%d): %s (token may be expired, try 'gophkeeper login')", resp.StatusCode, ae.Error)
+			}
 			return fmt.Errorf("server error (%d): %s", resp.StatusCode, ae.Error)
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			return fmt.Errorf("server error (%d) (token may be expired, try 'gophkeeper login')", resp.StatusCode)
 		}
 		return fmt.Errorf("server error (%d)", resp.StatusCode)
 	}

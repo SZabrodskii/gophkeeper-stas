@@ -8,7 +8,7 @@ import (
 
 var registerCmd = &cobra.Command{
 	Use:   "register",
-	Short: "registration of user",
+	Short: "Register a new account",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		login, _ := cmd.Flags().GetString("login")
 		password, _ := cmd.Flags().GetString("password")
