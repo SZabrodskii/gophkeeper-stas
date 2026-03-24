@@ -48,6 +48,7 @@ type ConfigOut struct {
 	Logging logging.Config
 }
 
+// NewServerConfig parses environment variables into typed sub-configs.
 func NewServerConfig() (ConfigOut, error) {
 	var cfg ServerConfig
 	if err := env.Parse(&cfg); err != nil {
@@ -71,6 +72,7 @@ func NewServerConfig() (ConfigOut, error) {
 	}, nil
 }
 
+// Module provides all config sub-types via fx DI.
 var Module = fx.Module("config",
 	fx.Provide(NewServerConfig),
 )

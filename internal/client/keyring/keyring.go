@@ -12,6 +12,7 @@ const (
 	accountLastSync = "last-sync-time"
 )
 
+// TokenStore abstracts secure storage for authentication tokens and sync state.
 type TokenStore interface {
 	Set(token string) error
 	Get() (string, error)
@@ -20,8 +21,10 @@ type TokenStore interface {
 	GetLastSync() (time.Time, error)
 }
 
+// OSKeyring implements TokenStore using the OS-level secret store.
 type OSKeyring struct{}
 
+// New returns a new OSKeyring instance.
 func New() *OSKeyring {
 	return &OSKeyring{}
 }

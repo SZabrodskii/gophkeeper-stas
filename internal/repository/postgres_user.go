@@ -13,22 +13,26 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/model"
 )
 
+// UserModule provides the UserRepository via fx DI.
 var UserModule = fx.Module("repository.user",
 	fx.Provide(NewPostgresUserRepository),
 )
 
 const pgUniqueViolation = "23505"
 
+// UserRepositoryOut wraps UserRepository for fx dependency injection.
 type UserRepositoryOut struct {
 	fx.Out
 
 	Repo UserRepository
 }
 
+// PostgresUserRepository implements UserRepository backed by PostgreSQL.
 type PostgresUserRepository struct {
 	db *sql.DB
 }
 
+// NewPostgresUserRepository creates a PostgreSQL-backed UserRepository.
 func NewPostgresUserRepository(db *sql.DB) UserRepositoryOut {
 	return UserRepositoryOut{
 		Repo: newPostgresUserRepository(db),

@@ -14,20 +14,24 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/model"
 )
 
+// EntryModule provides the EntryRepository via fx DI.
 var EntryModule = fx.Module("repository.entry",
 	fx.Provide(NewPostgresEntryRepository),
 )
 
+// EntryRepositoryOut wraps EntryRepository for fx dependency injection.
 type EntryRepositoryOut struct {
 	fx.Out
 
 	Repo EntryRepository
 }
 
+// PostgresEntryRepository implements EntryRepository backed by PostgreSQL.
 type PostgresEntryRepository struct {
 	db *sql.DB
 }
 
+// NewPostgresEntryRepository creates a PostgreSQL-backed EntryRepository.
 func NewPostgresEntryRepository(db *sql.DB) EntryRepositoryOut {
 	return EntryRepositoryOut{
 		Repo: newPostgresEntryRepository(db),

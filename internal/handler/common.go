@@ -5,6 +5,7 @@ import (
 	"go.uber.org/fx"
 )
 
+// FxHandler wraps an httpbara handler for fx group injection.
 type FxHandler struct {
 	fx.Out
 

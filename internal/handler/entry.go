@@ -15,6 +15,7 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/service"
 )
 
+// EntryModule provides the EntryHandler via fx DI.
 var EntryModule = fx.Module("handler.entry",
 	fx.Provide(NewEntryHandler),
 )
@@ -29,6 +30,7 @@ type entryHandlerRoutes struct {
 	SyncEntries httpbara.Route `route:"GET /sync" group:"v1"`
 }
 
+// EntryHandler handles CRUD and sync operations for secret entries.
 type EntryHandler struct {
 	entryHandlerRoutes
 	entryService *service.EntryService
@@ -62,6 +64,7 @@ type updateEntryResponse struct {
 	UpdatedAt string    `json:"updated_at"`
 }
 
+// NewEntryHandler creates an EntryHandler and registers its routes via httpbara.
 func NewEntryHandler(params entryHandlerParams) (FxHandler, error) {
 	h := &EntryHandler{entryService: params.EntryService}
 	return asFxHandler(httpbara.AsHandler(h))

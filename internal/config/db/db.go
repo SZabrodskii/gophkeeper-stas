@@ -22,6 +22,7 @@ var Module = fx.Module("db",
 	fx.Provide(NewDB),
 )
 
+// NewDB opens a PostgreSQL connection, runs migrations, and registers lifecycle hooks.
 func NewDB(lc fx.Lifecycle, cfg config.DBConfig, logger *zap.Logger) (*sql.DB, error) {
 	db, err := sql.Open("pgx", cfg.DSN)
 	if err != nil {

@@ -12,8 +12,10 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/service"
 )
 
+// UserIDKey is the gin context key for the authenticated user's UUID.
 const UserIDKey = "user_id"
 
+// AuthModule provides the AuthHandler via fx DI.
 var AuthModule = fx.Module("handler.auth",
 	fx.Provide(NewAuthHandler),
 )
@@ -25,6 +27,7 @@ type authHandlerRoutes struct {
 	JWTMiddleware httpbara.Middleware `middleware:"jwt"`
 }
 
+// AuthHandler handles registration, login and JWT middleware.
 type AuthHandler struct {
 	authHandlerRoutes
 	authService *service.AuthService
@@ -45,6 +48,7 @@ type tokenResponse struct {
 	Token string `json:"token"`
 }
 
+// NewAuthHandler creates an AuthHandler and registers its routes via httpbara.
 func NewAuthHandler(params authHandlerParams) (FxHandler, error) {
 	h := &AuthHandler{authService: params.AuthService}
 	return asFxHandler(httpbara.AsHandler(h))
@@ -113,6 +117,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, tokenResponse{Token: token})
 }
 
+// JWTMiddleware extracts and validates the Bearer token from the Authorization header.
 func (h *AuthHandler) JWTMiddleware(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {

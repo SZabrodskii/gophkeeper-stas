@@ -6,7 +6,7 @@ LDFLAGS := -X $(MODULE)/pkg/buildinfo.Version=$(VERSION) \
            -X $(MODULE)/pkg/buildinfo.Date=$(DATE) \
            -X $(MODULE)/pkg/buildinfo.Commit=$(COMMIT)
 
-.PHONY: build build-server build-client test lint swag clean
+.PHONY: build build-server build-client test integration-test lint swag clean docker-up docker-down
 
 build: build-server build-client
 
@@ -31,6 +31,15 @@ swag:
 
 clean:
 	rm -rf bin/ coverage.out
+
+integration-test:
+	TEST_DATABASE_DSN=$(TEST_DATABASE_DSN) go test -race -count=1 -tags=integration ./...
+
+docker-up:
+	docker-compose up -d
+
+docker-down:
+	docker-compose down
 
 tls-cert:
 	mkdir -p certs

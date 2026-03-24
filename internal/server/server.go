@@ -25,6 +25,7 @@ type newRouterParams struct {
 	ZapLog   *zap.Logger
 }
 
+// NewRouter assembles the gin router with httpbara handlers and middleware.
 func NewRouter(params newRouterParams) (*gin.Engine, error) {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -55,6 +56,7 @@ func NewRouter(params newRouterParams) (*gin.Engine, error) {
 	return r, nil
 }
 
+// StartServer registers fx lifecycle hooks to start and gracefully stop the HTTPS server.
 func StartServer(lc fx.Lifecycle, cfg config.ListenConfig, router *gin.Engine, logger *zap.Logger) {
 	srv := &http.Server{
 		Addr:    cfg.Address,
