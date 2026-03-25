@@ -1016,6 +1016,175 @@ func TestSyncEntries_VerifyServerTime_200(t *testing.T) {
 	assert.True(t, !serverTime.After(after.Add(time.Second)))
 }
 
+func TestUpdateEntry_InvalidJSON_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+	entryID := createTestEntry(t, r, token)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+entryID.String(), bytes.NewReader([]byte("bad json")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateEntry_InvalidID_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "credential",
+		"name":       "Test",
+		"data":       map[string]string{"login": "u", "password": "p"},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/not-a-uuid", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateEntry_MissingName_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+	entryID := createTestEntry(t, r, token)
+
+	reqBody := map[string]interface{}{
+		"entry_type": "credential",
+		"name":       "",
+		"data":       map[string]string{"login": "u", "password": "p"},
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+entryID.String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateEntry_Binary_TooLarge_413(t *testing.T) {
+	r, _, _ := setupEntryRouterWithMaxBinary(10)
+	token := getTestToken(t, r)
+
+	// Create a binary entry first (small enough)
+	rawData := []byte("small")
+	b64Data := base64.StdEncoding.EncodeToString(rawData)
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"entry_type": "binary",
+		"name":       "My File",
+		"data":       map[string]string{"data": b64Data, "original_filename": "f.bin"},
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	cw := httptest.NewRecorder()
+	r.ServeHTTP(cw, createReq)
+	require.Equal(t, http.StatusCreated, cw.Code)
+	var createResp createEntryResponse
+	require.NoError(t, json.Unmarshal(cw.Body.Bytes(), &createResp))
+
+	// Now update with too-large data
+	bigData := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 11)))
+	updateBody, _ := json.Marshal(map[string]interface{}{
+		"entry_type": "binary",
+		"name":       "My File",
+		"data":       map[string]string{"data": bigData, "original_filename": "f.bin"},
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/entries/"+createResp.ID.String(), bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+}
+
+func TestDeleteEntry_InvalidID_400(t *testing.T) {
+	r, _, _ := setupEntryRouter()
+	token := getTestToken(t, r)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/entries/not-a-uuid", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSyncEntries_AllTypes_200(t *testing.T) {
+	b64Data := base64.StdEncoding.EncodeToString([]byte("binary data"))
+
+	tests := []struct {
+		name      string
+		entryType model.EntryType
+		body      map[string]interface{}
+	}{
+		{
+			name:      "text",
+			entryType: model.EntryTypeText,
+			body: map[string]interface{}{
+				"entry_type": "text", "name": "Note",
+				"data": map[string]string{"content": "secret note"},
+			},
+		},
+		{
+			name:      "card",
+			entryType: model.EntryTypeCard,
+			body: map[string]interface{}{
+				"entry_type": "card", "name": "Card",
+				"data": map[string]string{
+					"number": "4532015112830366", "expiry": "12/25",
+					"holder_name": "John", "cvv": "123",
+				},
+			},
+		},
+		{
+			name:      "binary",
+			entryType: model.EntryTypeBinary,
+			body: map[string]interface{}{
+				"entry_type": "binary", "name": "File",
+				"data": map[string]string{"data": b64Data, "original_filename": "file.bin"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _, _ := setupEntryRouter()
+			token := getTestToken(t, r)
+			since := time.Now().Add(-time.Hour).Format(time.RFC3339)
+
+			createBody, _ := json.Marshal(tc.body)
+			createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(createBody))
+			createReq.Header.Set("Content-Type", "application/json")
+			createReq.Header.Set("Authorization", "Bearer "+token)
+			cw := httptest.NewRecorder()
+			r.ServeHTTP(cw, createReq)
+			require.Equal(t, http.StatusCreated, cw.Code)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusOK, w.Code)
+			var resp syncResponse
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			assert.Len(t, resp.Entries, 1)
+			assert.Equal(t, tc.entryType, resp.Entries[0].EntryType)
+		})
+	}
+}
+
 func TestErrorResponseFormat_Consistent(t *testing.T) {
 	r, _, _ := setupEntryRouter()
 	token := getTestToken(t, r)

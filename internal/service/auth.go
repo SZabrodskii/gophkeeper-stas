@@ -16,6 +16,7 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/repository"
 )
 
+// AuthModule provides the AuthService via fx DI.
 var AuthModule = fx.Module("service.auth",
 	fx.Provide(NewAuthService),
 )
@@ -31,11 +32,13 @@ type authServiceParams struct {
 	AuthConfig config.AuthConfig
 }
 
+// AuthService handles user registration, login and JWT validation.
 type AuthService struct {
 	userRepo  repository.UserRepository
 	jwtSecret []byte
 }
 
+// NewAuthService creates an AuthService from fx-injected parameters.
 func NewAuthService(params authServiceParams) *AuthService {
 	return &AuthService{
 		userRepo:  params.UserRepo,
@@ -43,6 +46,7 @@ func NewAuthService(params authServiceParams) *AuthService {
 	}
 }
 
+// NewAuthServiceFromRaw creates an AuthService without fx (useful for tests).
 func NewAuthServiceFromRaw(userRepo repository.UserRepository, jwtSecret string) *AuthService {
 	return &AuthService{
 		userRepo:  userRepo,
@@ -50,6 +54,7 @@ func NewAuthServiceFromRaw(userRepo repository.UserRepository, jwtSecret string)
 	}
 }
 
+// Register creates a new user and returns a JWT token.
 func (s *AuthService) Register(ctx context.Context, login, password string) (string, error) {
 	if login == "" {
 		return "", fmt.Errorf("%w: login is required", ErrValidation)
@@ -85,6 +90,7 @@ func (s *AuthService) Register(ctx context.Context, login, password string) (str
 	return token, nil
 }
 
+// Login authenticates an existing user and returns a JWT token.
 func (s *AuthService) Login(ctx context.Context, login, password string) (string, error) {
 	user, err := s.userRepo.GetByLogin(ctx, login)
 	if err != nil {
@@ -103,6 +109,7 @@ func (s *AuthService) Login(ctx context.Context, login, password string) (string
 	return token, nil
 }
 
+// ValidateToken parses and validates a JWT, returning the user ID.
 func (s *AuthService) ValidateToken(tokenString string) (uuid.UUID, error) {
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {

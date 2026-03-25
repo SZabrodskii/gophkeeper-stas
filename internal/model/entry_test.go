@@ -50,3 +50,19 @@ func TestValidateExpiry_Invalid(t *testing.T) {
 		}
 	}
 }
+
+func TestEntryTypeValid(t *testing.T) {
+	valid := []EntryType{EntryTypeCredential, EntryTypeText, EntryTypeBinary, EntryTypeCard}
+	for _, et := range valid {
+		if !et.Valid() {
+			t.Errorf("EntryType(%q).Valid() = false, want true", et)
+		}
+	}
+
+	invalid := []EntryType{"", "unknown", "CREDENTIAL"}
+	for _, et := range invalid {
+		if et.Valid() {
+			t.Errorf("EntryType(%q).Valid() = true, want false", et)
+		}
+	}
+}

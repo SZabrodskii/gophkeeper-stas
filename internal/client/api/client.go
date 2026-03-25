@@ -13,12 +13,14 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/config"
 )
 
+// HTTPClient is the API client for communicating with the GophKeeper server.
 type HTTPClient struct {
 	baseURL    string
 	httpClient *http.Client
 	token      string
 }
 
+// NewHTTPClient creates an HTTPClient configured with TLS settings.
 func NewHTTPClient(cfg *config.ClientConfig) *HTTPClient {
 	tlsCfg := &tls.Config{}
 	if cfg.TLSInsecure {
@@ -36,19 +38,23 @@ func NewHTTPClient(cfg *config.ClientConfig) *HTTPClient {
 	}
 }
 
+// SetToken stores the JWT token for subsequent authenticated requests.
 func (c *HTTPClient) SetToken(token string) {
 	c.token = token
 }
 
+// AuthRequest is the payload for register/login endpoints.
 type AuthRequest struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
 }
 
+// TokenResponse is the server response containing a JWT token.
 type TokenResponse struct {
 	Token string `json:"token"`
 }
 
+// CreateEntryRequest is the payload for creating or updating an entry.
 type CreateEntryRequest struct {
 	EntryType string           `json:"entry_type"`
 	Name      string           `json:"name"`
@@ -56,16 +62,19 @@ type CreateEntryRequest struct {
 	Data      json.RawMessage  `json:"data"`
 }
 
+// CreateEntryResponse is returned after successfully creating an entry.
 type CreateEntryResponse struct {
 	ID        string `json:"id"`
 	CreatedAt string `json:"created_at"`
 }
 
+// UpdateEntryResponse is returned after successfully updating an entry.
 type UpdateEntryResponse struct {
 	ID        string `json:"id"`
 	UpdatedAt string `json:"updated_at"`
 }
 
+// EntryListItem represents a single entry in the list response.
 type EntryListItem struct {
 	ID        string           `json:"id"`
 	EntryType string           `json:"entry_type"`
@@ -75,6 +84,7 @@ type EntryListItem struct {
 	UpdatedAt string           `json:"updated_at"`
 }
 
+// EntryResponse is the full entry detail returned by get/sync endpoints.
 type EntryResponse struct {
 	ID        string           `json:"id"`
 	EntryType string           `json:"entry_type"`
@@ -85,39 +95,39 @@ type EntryResponse struct {
 	UpdatedAt string           `json:"updated_at"`
 }
 
+// SyncResponse contains entries updated since the requested timestamp.
 type SyncResponse struct {
 	Entries    []EntryResponse `json:"entries"`
 	ServerTime string          `json:"server_time"`
 }
 
+// requestJSON performs an API call and decodes the JSON response into T.
+func requestJSON[T any](c *HTTPClient, ctx context.Context, method, path string, body any) (*T, error) {
+	var result T
+	if err := c.doRequest(ctx, method, path, body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// Register sends a registration request and returns the token response.
 func (c *HTTPClient) Register(ctx context.Context, login, password string) (*TokenResponse, error) {
-	var resp TokenResponse
-	err := c.doRequest(ctx, http.MethodPost, "/api/v1/auth/register",
-		AuthRequest{Login: login, Password: password}, &resp)
-	if err != nil {
-		return nil, err
-	}
-	return &resp, nil
+	return requestJSON[TokenResponse](c, ctx, http.MethodPost, "/api/v1/auth/register",
+		AuthRequest{Login: login, Password: password})
 }
 
+// Login authenticates and returns the token response.
 func (c *HTTPClient) Login(ctx context.Context, login, password string) (*TokenResponse, error) {
-	var resp TokenResponse
-	err := c.doRequest(ctx, http.MethodPost, "/api/v1/auth/login",
-		AuthRequest{Login: login, Password: password}, &resp)
-	if err != nil {
-		return nil, err
-	}
-	return &resp, nil
+	return requestJSON[TokenResponse](c, ctx, http.MethodPost, "/api/v1/auth/login",
+		AuthRequest{Login: login, Password: password})
 }
 
+// CreateEntry sends a create-entry request to the server.
 func (c *HTTPClient) CreateEntry(ctx context.Context, req CreateEntryRequest) (*CreateEntryResponse, error) {
-	var resp CreateEntryResponse
-	if err := c.doRequest(ctx, http.MethodPost, "/api/v1/entries", req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
+	return requestJSON[CreateEntryResponse](c, ctx, http.MethodPost, "/api/v1/entries", req)
 }
 
+// ListEntries fetches the list of all entries for the authenticated user.
 func (c *HTTPClient) ListEntries(ctx context.Context) ([]EntryListItem, error) {
 	var resp []EntryListItem
 	if err := c.doRequest(ctx, http.MethodGet, "/api/v1/entries", nil, &resp); err != nil {
@@ -126,33 +136,25 @@ func (c *HTTPClient) ListEntries(ctx context.Context) ([]EntryListItem, error) {
 	return resp, nil
 }
 
+// GetEntry fetches a single entry by ID.
 func (c *HTTPClient) GetEntry(ctx context.Context, id string) (*EntryResponse, error) {
-	var resp EntryResponse
-	if err := c.doRequest(ctx, http.MethodGet, "/api/v1/entries/"+id, nil, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
+	return requestJSON[EntryResponse](c, ctx, http.MethodGet, "/api/v1/entries/"+id, nil)
 }
 
+// UpdateEntry sends an update-entry request to the server.
 func (c *HTTPClient) UpdateEntry(ctx context.Context, id string, req CreateEntryRequest) (*UpdateEntryResponse, error) {
-	var resp UpdateEntryResponse
-	if err := c.doRequest(ctx, http.MethodPut, "/api/v1/entries/"+id, req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
+	return requestJSON[UpdateEntryResponse](c, ctx, http.MethodPut, "/api/v1/entries/"+id, req)
 }
 
+// DeleteEntry deletes an entry by ID.
 func (c *HTTPClient) DeleteEntry(ctx context.Context, id string) error {
 	return c.doRequest(ctx, http.MethodDelete, "/api/v1/entries/"+id, nil, nil)
 }
 
+// Sync fetches entries updated after the given timestamp.
 func (c *HTTPClient) Sync(ctx context.Context, since time.Time) (*SyncResponse, error) {
-	var resp SyncResponse
-	path := "/api/v1/sync?since=" + since.Format(time.RFC3339)
-	if err := c.doRequest(ctx, http.MethodGet, path, nil, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
+	return requestJSON[SyncResponse](c, ctx, http.MethodGet,
+		"/api/v1/sync?since="+since.Format(time.RFC3339), nil)
 }
 
 type apiError struct {

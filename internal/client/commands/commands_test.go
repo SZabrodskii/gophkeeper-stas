@@ -340,3 +340,52 @@ func TestRequireAuth_NotLoggedIn(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not logged in")
 }
+
+func TestParseMetadata_Valid(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().StringArray("metadata", nil, "")
+	require.NoError(t, cmd.Flags().Set("metadata", "env=prod"))
+	require.NoError(t, cmd.Flags().Set("metadata", "team=backend"))
+
+	raw, err := parseMetadata(cmd)
+	require.NoError(t, err)
+	require.NotNil(t, raw)
+
+	var m map[string]string
+	require.NoError(t, json.Unmarshal(*raw, &m))
+	assert.Equal(t, "prod", m["env"])
+	assert.Equal(t, "backend", m["team"])
+}
+
+func TestParseMetadata_Empty(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().StringArray("metadata", nil, "")
+
+	raw, err := parseMetadata(cmd)
+	require.NoError(t, err)
+	assert.Nil(t, raw)
+}
+
+func TestParseMetadata_InvalidFormat(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().StringArray("metadata", nil, "")
+	require.NoError(t, cmd.Flags().Set("metadata", "no-equals-sign"))
+
+	_, err := parseMetadata(cmd)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid metadata format")
+}
+
+func TestParseMetadata_ValueWithEquals(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().StringArray("metadata", nil, "")
+	require.NoError(t, cmd.Flags().Set("metadata", "url=https://example.com?a=1"))
+
+	raw, err := parseMetadata(cmd)
+	require.NoError(t, err)
+	require.NotNil(t, raw)
+
+	var m map[string]string
+	require.NoError(t, json.Unmarshal(*raw, &m))
+	assert.Equal(t, "https://example.com?a=1", m["url"])
+}

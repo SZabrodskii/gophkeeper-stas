@@ -12,6 +12,7 @@ type InMemoryKeyring struct {
 	hasToken bool
 }
 
+// NewInMemory creates an in-memory token store for testing.
 func NewInMemory() *InMemoryKeyring {
 	return &InMemoryKeyring{}
 }

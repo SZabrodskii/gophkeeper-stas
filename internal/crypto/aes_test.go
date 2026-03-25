@@ -108,3 +108,88 @@ func TestDecryptCiphertextTooShort(t *testing.T) {
 		t.Fatalf("got %v, want ErrCiphertextTooShort", err)
 	}
 }
+
+func TestEncryptDecryptLargeInput(t *testing.T) {
+	key := testKey(t)
+	plaintext := make([]byte, 1<<20) // 1 MB
+	for i := range plaintext {
+		plaintext[i] = byte(i % 256)
+	}
+
+	ciphertext, err := Encrypt(key, plaintext)
+	if err != nil {
+		t.Fatalf("encrypt large: %v", err)
+	}
+
+	decrypted, err := Decrypt(key, ciphertext)
+	if err != nil {
+		t.Fatalf("decrypt large: %v", err)
+	}
+
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Fatal("large input round-trip mismatch")
+	}
+}
+
+func TestEncryptNonceUniqueness(t *testing.T) {
+	key := testKey(t)
+	plaintext := []byte("same plaintext")
+
+	ct1, err := Encrypt(key, plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct2, err := Encrypt(key, plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Equal(ct1, ct2) {
+		t.Fatal("two encryptions of the same plaintext produced identical ciphertext")
+	}
+}
+
+func TestEncryptDecryptNilInput(t *testing.T) {
+	key := testKey(t)
+
+	ciphertext, err := Encrypt(key, nil)
+	if err != nil {
+		t.Fatalf("encrypt nil: %v", err)
+	}
+
+	decrypted, err := Decrypt(key, ciphertext)
+	if err != nil {
+		t.Fatalf("decrypt nil: %v", err)
+	}
+
+	if len(decrypted) != 0 {
+		t.Fatalf("expected empty, got %d bytes", len(decrypted))
+	}
+}
+
+func BenchmarkEncrypt(b *testing.B) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		b.Fatal(err)
+	}
+	plaintext := []byte("benchmark encryption payload for AES-256-GCM")
+
+	for b.Loop() {
+		_, _ = Encrypt(key, plaintext)
+	}
+}
+
+func BenchmarkDecrypt(b *testing.B) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		b.Fatal(err)
+	}
+	ciphertext, err := Encrypt(key, []byte("benchmark decryption payload for AES-256-GCM"))
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for b.Loop() {
+		_, _ = Decrypt(key, ciphertext)
+	}
+}

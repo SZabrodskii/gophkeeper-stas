@@ -2,15 +2,20 @@ package model
 
 import (
 	"encoding/json"
+	"iter"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unique"
 
 	"github.com/google/uuid"
 )
 
+// EntryType represents the kind of secret stored in an entry.
 type EntryType string
 
+// Supported entry types.
 const (
 	EntryTypeCredential EntryType = "credential"
 	EntryTypeText       EntryType = "text"
@@ -18,14 +23,29 @@ const (
 	EntryTypeCard       EntryType = "card"
 )
 
-func (t EntryType) Valid() bool {
-	switch t {
-	case EntryTypeCredential, EntryTypeText, EntryTypeBinary, EntryTypeCard:
-		return true
-	}
-	return false
+// EntryTypes returns an iterator over all supported entry types.
+func EntryTypes() iter.Seq[EntryType] {
+	return slices.Values([]EntryType{
+		EntryTypeCredential, EntryTypeText, EntryTypeBinary, EntryTypeCard,
+	})
 }
 
+// validTypeHandles is a set of interned entry type handles for O(1) lookup.
+var validTypeHandles = func() map[unique.Handle[string]]struct{} {
+	m := make(map[unique.Handle[string]]struct{}, 4)
+	for et := range EntryTypes() {
+		m[unique.Make(string(et))] = struct{}{}
+	}
+	return m
+}()
+
+// Valid reports whether t is one of the known entry types.
+func (t EntryType) Valid() bool {
+	_, ok := validTypeHandles[unique.Make(string(t))]
+	return ok
+}
+
+// Entry is the core domain object representing a user's secret.
 type Entry struct {
 	ID        uuid.UUID        `json:"id"`
 	UserID    uuid.UUID        `json:"user_id"`
@@ -41,6 +61,7 @@ type Entry struct {
 	Card       *CardData       `json:"card,omitempty"`
 }
 
+// CredentialData holds login/password pair for a credential entry.
 type CredentialData struct {
 	EntryID           uuid.UUID `json:"-"`
 	EncryptedLogin    []byte    `json:"-"`
@@ -49,12 +70,14 @@ type CredentialData struct {
 	Password          string    `json:"password,omitempty"`
 }
 
+// TextData holds free-form text content for a text entry.
 type TextData struct {
 	EntryID          uuid.UUID `json:"-"`
 	EncryptedContent []byte    `json:"-"`
 	Content          string    `json:"content,omitempty"`
 }
 
+// BinaryData holds an arbitrary file for a binary entry.
 type BinaryData struct {
 	EntryID          uuid.UUID `json:"-"`
 	EncryptedData    []byte    `json:"-"`
@@ -62,6 +85,7 @@ type BinaryData struct {
 	Data             string    `json:"data,omitempty"`
 }
 
+// CardData holds payment card details for a card entry.
 type CardData struct {
 	EntryID             uuid.UUID `json:"-"`
 	EncryptedNumber     []byte    `json:"-"`
@@ -74,6 +98,7 @@ type CardData struct {
 	CVV                 string    `json:"cvv,omitempty"`
 }
 
+// ValidateLuhn checks a card number using the Luhn algorithm.
 func ValidateLuhn(number string) bool {
 	cleaned := strings.ReplaceAll(number, " ", "")
 	cleaned = strings.ReplaceAll(cleaned, "-", "")
@@ -105,6 +130,7 @@ func ValidateLuhn(number string) bool {
 	return sum%10 == 0
 }
 
+// ValidateExpiry validates card expiry in MM/YY format.
 func ValidateExpiry(expiry string) bool {
 	parts := strings.Split(expiry, "/")
 	if len(parts) != 2 {
@@ -127,4 +153,5 @@ func ValidateExpiry(expiry string) bool {
 	return err == nil
 }
 
+// Metadata is a set of arbitrary key-value pairs attached to an entry.
 type Metadata map[string]string

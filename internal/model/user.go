@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// User represents a registered application user.
 type User struct {
 	ID           uuid.UUID `json:"id"`
 	Login        string    `json:"login"`

@@ -9,11 +9,14 @@ import (
 	"io"
 )
 
+// ErrInvalidKey is returned when the encryption key is not exactly 32 bytes.
+// ErrCiphertextTooShort is returned when ciphertext is shorter than the GCM nonce.
 var (
 	ErrInvalidKey         = errors.New("encryption key must be 32 bytes")
 	ErrCiphertextTooShort = errors.New("ciphertext too short")
 )
 
+// Encrypt encrypts plaintext using AES-256-GCM with a random nonce.
 func Encrypt(key, plaintext []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, ErrInvalidKey
@@ -37,6 +40,7 @@ func Encrypt(key, plaintext []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
+// Decrypt decrypts AES-256-GCM ciphertext produced by Encrypt.
 func Decrypt(key, ciphertext []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, ErrInvalidKey

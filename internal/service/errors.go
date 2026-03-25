@@ -2,6 +2,7 @@ package service
 
 import "errors"
 
+// Service-level sentinel errors.
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrUserExists         = errors.New("user already exists")

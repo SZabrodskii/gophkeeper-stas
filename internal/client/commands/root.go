@@ -12,6 +12,7 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/pkg/buildinfo"
 )
 
+// App holds shared dependencies for all CLI commands.
 type App struct {
 	Config  *config.ClientConfig
 	API     *api.HTTPClient
@@ -49,6 +50,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("insecure", false, "skip TLS verification")
 }
 
+// Execute runs the root cobra command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

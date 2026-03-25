@@ -2,6 +2,7 @@ package model
 
 import "errors"
 
+// Domain-level sentinel errors.
 var (
 	ErrNotFound      = errors.New("not found")
 	ErrAlreadyExists = errors.New("already exists")

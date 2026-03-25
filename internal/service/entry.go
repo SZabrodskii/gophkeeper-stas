@@ -16,6 +16,7 @@ import (
 	"github.com/SZabrodskii/gophkeeper-stas/internal/repository"
 )
 
+// EntryModule provides the EntryService via fx DI.
 var EntryModule = fx.Module("service.entry",
 	fx.Provide(NewEntryService),
 )
@@ -28,12 +29,14 @@ type entryServiceParams struct {
 	ServerConfig *config.ServerConfig
 }
 
+// EntryService implements CRUD and sync for secret entries with encryption.
 type EntryService struct {
 	entryRepo     repository.EntryRepository
 	encryptionKey []byte
 	maxBinarySize int64
 }
 
+// NewEntryService creates an EntryService from fx-injected parameters.
 func NewEntryService(params entryServiceParams) *EntryService {
 	return &EntryService{
 		entryRepo:     params.EntryRepo,
@@ -42,6 +45,7 @@ func NewEntryService(params entryServiceParams) *EntryService {
 	}
 }
 
+// NewEntryServiceFromRaw creates an EntryService without fx (useful for tests).
 func NewEntryServiceFromRaw(entryRepo repository.EntryRepository, encryptionKey string, maxBinarySize int64) *EntryService {
 	return &EntryService{
 		entryRepo:     entryRepo,
@@ -50,6 +54,7 @@ func NewEntryServiceFromRaw(entryRepo repository.EntryRepository, encryptionKey 
 	}
 }
 
+// Create validates, encrypts and persists a new entry.
 func (s *EntryService) Create(ctx context.Context, entry *model.Entry) error {
 	if entry.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrValidation)
@@ -88,6 +93,7 @@ func (s *EntryService) Create(ctx context.Context, entry *model.Entry) error {
 	return nil
 }
 
+// GetByID retrieves and decrypts an entry, verifying ownership.
 func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*model.Entry, error) {
 	entry, err := s.entryRepo.GetByID(ctx, id)
 	if err != nil {
@@ -123,6 +129,7 @@ func (s *EntryService) GetByID(ctx context.Context, id uuid.UUID, userID uuid.UU
 	return entry, nil
 }
 
+// Update re-encrypts and persists changes to an existing entry.
 func (s *EntryService) Update(ctx context.Context, id, userID uuid.UUID, entry *model.Entry) error {
 	if entry.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrValidation)
@@ -177,6 +184,7 @@ func (s *EntryService) Update(ctx context.Context, id, userID uuid.UUID, entry *
 	return nil
 }
 
+// Delete removes an entry after verifying ownership.
 func (s *EntryService) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	entry, err := s.entryRepo.GetByID(ctx, id)
 	if err != nil {
@@ -200,6 +208,7 @@ func (s *EntryService) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	return nil
 }
 
+// ListByUserID returns all entries belonging to a user (without decryption).
 func (s *EntryService) ListByUserID(ctx context.Context, userID uuid.UUID) ([]model.Entry, error) {
 	result, err := s.entryRepo.ListByUserID(ctx, userID)
 	if err != nil {
@@ -427,6 +436,7 @@ func (s *EntryService) decryptBinary(entry *model.Entry) error {
 	return nil
 }
 
+// Sync returns entries updated after since, decrypted, along with server time.
 func (s *EntryService) Sync(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.Entry, time.Time, error) {
 	serverTime := time.Now()
 	entries, err := s.entryRepo.ListUpdatedAfter(ctx, userID, since)
