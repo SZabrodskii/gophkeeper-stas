@@ -166,3 +166,30 @@ func TestEncryptDecryptNilInput(t *testing.T) {
 		t.Fatalf("expected empty, got %d bytes", len(decrypted))
 	}
 }
+
+func BenchmarkEncrypt(b *testing.B) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		b.Fatal(err)
+	}
+	plaintext := []byte("benchmark encryption payload for AES-256-GCM")
+
+	for b.Loop() {
+		_, _ = Encrypt(key, plaintext)
+	}
+}
+
+func BenchmarkDecrypt(b *testing.B) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		b.Fatal(err)
+	}
+	ciphertext, err := Encrypt(key, []byte("benchmark decryption payload for AES-256-GCM"))
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for b.Loop() {
+		_, _ = Decrypt(key, ciphertext)
+	}
+}

@@ -2,9 +2,12 @@ package model
 
 import (
 	"encoding/json"
+	"iter"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unique"
 
 	"github.com/google/uuid"
 )
@@ -20,13 +23,26 @@ const (
 	EntryTypeCard       EntryType = "card"
 )
 
+// EntryTypes returns an iterator over all supported entry types.
+func EntryTypes() iter.Seq[EntryType] {
+	return slices.Values([]EntryType{
+		EntryTypeCredential, EntryTypeText, EntryTypeBinary, EntryTypeCard,
+	})
+}
+
+// validTypeHandles is a set of interned entry type handles for O(1) lookup.
+var validTypeHandles = func() map[unique.Handle[string]]struct{} {
+	m := make(map[unique.Handle[string]]struct{}, 4)
+	for et := range EntryTypes() {
+		m[unique.Make(string(et))] = struct{}{}
+	}
+	return m
+}()
+
 // Valid reports whether t is one of the known entry types.
 func (t EntryType) Valid() bool {
-	switch t {
-	case EntryTypeCredential, EntryTypeText, EntryTypeBinary, EntryTypeCard:
-		return true
-	}
-	return false
+	_, ok := validTypeHandles[unique.Make(string(t))]
+	return ok
 }
 
 // Entry is the core domain object representing a user's secret.

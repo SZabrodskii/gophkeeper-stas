@@ -1120,99 +1120,69 @@ func TestDeleteEntry_InvalidID_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestSyncEntries_TextEntry_200(t *testing.T) {
-	r, _, _ := setupEntryRouter()
-	token := getTestToken(t, r)
-
-	since := time.Now().Add(-time.Hour).Format(time.RFC3339)
-
-	// Create text entry
-	createBody, _ := json.Marshal(map[string]interface{}{
-		"entry_type": "text",
-		"name":       "Note",
-		"data":       map[string]string{"content": "secret note"},
-	})
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(createBody))
-	createReq.Header.Set("Content-Type", "application/json")
-	createReq.Header.Set("Authorization", "Bearer "+token)
-	cw := httptest.NewRecorder()
-	r.ServeHTTP(cw, createReq)
-	require.Equal(t, http.StatusCreated, cw.Code)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	var resp syncResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Len(t, resp.Entries, 1)
-	assert.Equal(t, model.EntryTypeText, resp.Entries[0].EntryType)
-}
-
-func TestSyncEntries_CardEntry_200(t *testing.T) {
-	r, _, _ := setupEntryRouter()
-	token := getTestToken(t, r)
-
-	since := time.Now().Add(-time.Hour).Format(time.RFC3339)
-
-	createBody, _ := json.Marshal(map[string]interface{}{
-		"entry_type": "card",
-		"name":       "Card",
-		"data": map[string]string{
-			"number": "4532015112830366", "expiry": "12/25",
-			"holder_name": "John", "cvv": "123",
-		},
-	})
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(createBody))
-	createReq.Header.Set("Content-Type", "application/json")
-	createReq.Header.Set("Authorization", "Bearer "+token)
-	cw := httptest.NewRecorder()
-	r.ServeHTTP(cw, createReq)
-	require.Equal(t, http.StatusCreated, cw.Code)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	var resp syncResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Len(t, resp.Entries, 1)
-	assert.Equal(t, model.EntryTypeCard, resp.Entries[0].EntryType)
-}
-
-func TestSyncEntries_BinaryEntry_200(t *testing.T) {
-	r, _, _ := setupEntryRouter()
-	token := getTestToken(t, r)
-
-	since := time.Now().Add(-time.Hour).Format(time.RFC3339)
-
+func TestSyncEntries_AllTypes_200(t *testing.T) {
 	b64Data := base64.StdEncoding.EncodeToString([]byte("binary data"))
-	createBody, _ := json.Marshal(map[string]interface{}{
-		"entry_type": "binary",
-		"name":       "File",
-		"data":       map[string]string{"data": b64Data, "original_filename": "file.bin"},
-	})
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(createBody))
-	createReq.Header.Set("Content-Type", "application/json")
-	createReq.Header.Set("Authorization", "Bearer "+token)
-	cw := httptest.NewRecorder()
-	r.ServeHTTP(cw, createReq)
-	require.Equal(t, http.StatusCreated, cw.Code)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	tests := []struct {
+		name      string
+		entryType model.EntryType
+		body      map[string]interface{}
+	}{
+		{
+			name:      "text",
+			entryType: model.EntryTypeText,
+			body: map[string]interface{}{
+				"entry_type": "text", "name": "Note",
+				"data": map[string]string{"content": "secret note"},
+			},
+		},
+		{
+			name:      "card",
+			entryType: model.EntryTypeCard,
+			body: map[string]interface{}{
+				"entry_type": "card", "name": "Card",
+				"data": map[string]string{
+					"number": "4532015112830366", "expiry": "12/25",
+					"holder_name": "John", "cvv": "123",
+				},
+			},
+		},
+		{
+			name:      "binary",
+			entryType: model.EntryTypeBinary,
+			body: map[string]interface{}{
+				"entry_type": "binary", "name": "File",
+				"data": map[string]string{"data": b64Data, "original_filename": "file.bin"},
+			},
+		},
+	}
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	var resp syncResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Len(t, resp.Entries, 1)
-	assert.Equal(t, model.EntryTypeBinary, resp.Entries[0].EntryType)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _, _ := setupEntryRouter()
+			token := getTestToken(t, r)
+			since := time.Now().Add(-time.Hour).Format(time.RFC3339)
+
+			createBody, _ := json.Marshal(tc.body)
+			createReq := httptest.NewRequest(http.MethodPost, "/api/v1/entries", bytes.NewReader(createBody))
+			createReq.Header.Set("Content-Type", "application/json")
+			createReq.Header.Set("Authorization", "Bearer "+token)
+			cw := httptest.NewRecorder()
+			r.ServeHTTP(cw, createReq)
+			require.Equal(t, http.StatusCreated, cw.Code)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/sync?since="+since, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusOK, w.Code)
+			var resp syncResponse
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			assert.Len(t, resp.Entries, 1)
+			assert.Equal(t, tc.entryType, resp.Entries[0].EntryType)
+		})
+	}
 }
 
 func TestErrorResponseFormat_Consistent(t *testing.T) {
