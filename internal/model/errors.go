@@ -9,4 +9,5 @@ var (
 	ErrAccessDenied        = errors.New("access denied")
 	ErrBadRequest          = errors.New("bad request")
 	ErrUnprocessableEntity = errors.New("unprocessable entity")
+	ErrInternalServerError = errors.New("internal server error")
 )
