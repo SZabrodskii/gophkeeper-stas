@@ -10,4 +10,5 @@ var (
 	ErrBadRequest          = errors.New("bad request")
 	ErrUnprocessableEntity = errors.New("unprocessable entity")
 	ErrInternalServerError = errors.New("internal server error")
+	ErrUnmarshal           = errors.New("unmarshal error")
 )
